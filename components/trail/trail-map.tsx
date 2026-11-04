@@ -1,7 +1,7 @@
 "use client";
 
 import { Clock3, MapPin } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import type { Copy } from "@/lib/trail/copy";
@@ -15,7 +15,7 @@ import {
 } from "@/lib/trail/layout";
 import type { KnowledgeNode, TrailState } from "@/lib/trail/types";
 
-import { STATE_ICONS } from "./map-pane";
+import { STATE_ICONS } from "./state-icons";
 
 const NODE_RADIUS = 22;
 const RECENT_SEGMENTS = 4;
@@ -61,6 +61,12 @@ export function TrailMap({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+
+  // Once the map outgrows the pane, new ground would otherwise appear out of sight.
+  const focusRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    focusRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [trail.focusId, width]);
 
   const { positions, height } = useMemo(
     () => layoutTrail(trail.nodes, width),
@@ -180,6 +186,7 @@ export function TrailMap({
             return (
               <button
                 key={node.id}
+                ref={isFocus ? focusRef : undefined}
                 type="button"
                 aria-pressed={selectedId === node.id}
                 aria-label={`${node.label}, ${copy.states[node.state]}`}

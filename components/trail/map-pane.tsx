@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, CircleDashed, CloudFog, Clock3, Footprints, type LucideIcon } from "lucide-react";
+import { Clock3 } from "lucide-react";
+import { memo } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { Copy } from "@/lib/trail/copy";
@@ -18,14 +19,8 @@ import { TrailMap } from "./trail-map";
 
 const TIME_STEPS = [1, 7, 30];
 
-export const STATE_ICONS: Record<NodeState, LucideIcon> = {
-  solid: Check,
-  seen: Footprints,
-  fuzzy: CloudFog,
-  unseen: CircleDashed,
-};
-
-export function MapPane({
+// Memoised because the conversation re-renders on every keystroke and streamed word.
+export const MapPane = memo(function MapPane({
   trail,
   clock,
   images,
@@ -131,4 +126,4 @@ export function MapPane({
       </footer>
     </section>
   );
-}
+});

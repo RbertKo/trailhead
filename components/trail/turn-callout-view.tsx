@@ -6,6 +6,7 @@ import {
   CloudFog,
   History,
   MapPin,
+  ScanSearch,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -57,12 +58,19 @@ export function TurnCalloutView({
 
   return (
     <div className="flex flex-col gap-1">
-      {callout.imageDescription && placed.length > 0 && (
-        <Row icon={MapPin} title={copy.placedTitle} tone="text-primary">
-          {placed.map(({ label }) => (
-            <Label key={label}>{label}</Label>
-          ))}
-        </Row>
+      {callout.imageDescription && (
+        <>
+          <Row icon={ScanSearch} title={copy.imageReadTitle}>
+            <span className="font-normal">{callout.imageDescription}</span>
+          </Row>
+          {placed.length > 0 && (
+            <Row icon={MapPin} title={copy.placedTitle} tone="text-primary">
+              {placed.map((label) => (
+                <Label key={label}>{label}</Label>
+              ))}
+            </Row>
+          )}
+        </>
       )}
 
       {kind === "gap" && (

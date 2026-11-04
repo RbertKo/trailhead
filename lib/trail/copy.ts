@@ -36,6 +36,7 @@ export interface Copy {
   under: string;
   traces: string;
   noSummary: string;
+  firstSeen: (when: string) => string;
   lastTouched: (when: string) => string;
   lastChecked: (when: string) => string;
   neverChecked: string;
@@ -104,6 +105,7 @@ export const COPY: Record<Locale, Copy> = {
     under: "상위 개념",
     traces: "남긴 흔적",
     noSummary: "아직 안 본 개념이야.",
+    firstSeen: (when) => `처음 본 때: ${when}`,
     lastTouched: (when) => `마지막으로 본 때: ${when}`,
     lastChecked: (when) => `마지막 기억 확인: ${when}`,
     neverChecked: "아직 기억 확인 전",
@@ -177,6 +179,7 @@ export const COPY: Record<Locale, Copy> = {
     under: "Part of",
     traces: "Traces",
     noSummary: "You haven't seen this one yet.",
+    firstSeen: (when) => `First seen: ${when}`,
     lastTouched: (when) => `Last seen: ${when}`,
     lastChecked: (when) => `Last recall check: ${when}`,
     neverChecked: "No recall check yet",

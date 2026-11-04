@@ -7,7 +7,7 @@ import { findById } from "@/lib/trail/engine";
 import type { DroppedImage } from "@/lib/trail/image";
 import type { KnowledgeNode, TrailState } from "@/lib/trail/types";
 
-import { STATE_ICONS } from "./map-pane";
+import { STATE_ICONS } from "./state-icons";
 
 const MAX_TRACES_SHOWN = 6;
 
@@ -32,8 +32,8 @@ export function NodeCard({
   const prerequisites = node.prerequisiteIds.flatMap(
     (id) => findById(trail.nodes, id) ?? [],
   );
-  const traces = trail.traces
-    .filter((trace) => trace.nodeIds.includes(node.id))
+  const traces = node.sources
+    .flatMap((id) => trail.traces.find((trace) => trace.id === id) ?? [])
     .slice(-MAX_TRACES_SHOWN);
   const ago = (time: number) => copy.ago(Math.max(0, clock - time));
 
@@ -89,6 +89,8 @@ export function NodeCard({
 
       {node.state !== "unseen" && (
         <p className="text-xs text-muted-foreground">
+          {copy.firstSeen(ago(node.firstSeenAt))}
+          <br />
           {copy.lastTouched(ago(node.lastTouchedAt))}
           <br />
           {node.lastCheckedAt === null
