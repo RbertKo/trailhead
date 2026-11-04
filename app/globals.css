@@ -175,6 +175,10 @@
 .trail-prose > * + * {
   margin-top: 0.7em;
 }
+/* Models often break lines with a single newline, which Markdown would swallow. */
+.trail-prose p {
+  white-space: pre-line;
+}
 .trail-prose strong {
   font-weight: 600;
 }

@@ -104,8 +104,9 @@ to `127.0.0.1`, and the page then looks fine but does nothing.
    interesting?".
 2. Ask a question or two, and drop a screenshot. The trail grows on the right, and after
    a few questions a short suggested path appears under the reply.
-3. Ask `역전파 설명해줘` ("explain backpropagation"). A hole appears for gradient descent.
-   Only that piece gets explained, then the reply returns to backpropagation.
+3. Ask `역전파 설명해줘` ("explain backpropagation"). A hole appears for what it rests on,
+   such as the chain rule. Only that piece gets explained, then the reply returns to
+   backpropagation, and the other holes stay on the map.
 4. Press **+7d** to simulate a week passing, then ask something related, such as
    `CNN은 어떻게 학습시켜?` ("how do you train a CNN?"). It tests your memory first. Stumble,
    and the concept turns fuzzy, gets re-taught, and the conversation goes back to your
