@@ -23,7 +23,8 @@ export async function parseJsonBody<Schema extends z.ZodType>(
     response: errorResponse({
       status: 413,
       code: "payload_too_large",
-      message: `The request body must be ${maxBytes} bytes or smaller.`,
+      message:
+        "The request is too large. Use a smaller input or start a new conversation.",
     }),
   };
 

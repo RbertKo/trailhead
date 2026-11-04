@@ -6,7 +6,15 @@ export interface ApiError {
   message: string;
 }
 
+const REJECTED_INPUT: ApiError = {
+  status: 400,
+  code: "upstream_rejected_input",
+  message: "The Meta Model API rejected this input. Check it and try again.",
+};
+
 const UPSTREAM_ERRORS: Record<number, ApiError> = {
+  400: REJECTED_INPUT,
+  422: REJECTED_INPUT,
   401: {
     status: 502,
     code: "invalid_api_key",

@@ -13,6 +13,8 @@ describe("toApiError", () => {
   });
 
   it.each([
+    [{ status: 400 }, "upstream_rejected_input", 400],
+    [{ statusCode: 422 }, "upstream_rejected_input", 400],
     [{ status: 401 }, "invalid_api_key", 502],
     [{ statusCode: 402 }, "billing_required", 502],
     [{ status: 404 }, "model_not_found", 502],
