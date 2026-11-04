@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { postJson } from "@/lib/api/client";
 import type { SegmentedObject } from "@/lib/meta/segment-result";
 
-// A larger file would exceed the API route's body limit once base64-encoded.
-const MAX_FILE_BYTES = 3 * 1024 * 1024;
+// Base64 adds a third, so this keeps the body under the API route's 4 MiB limit.
+const MAX_FILE_BYTES = 3_000_000;
 
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -65,9 +65,10 @@ export function SegmentPanel() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  // The image's onLoad updates its size. Clearing the size here would lose it
+  // for good when a new file has the same content, because onLoad won't re-fire.
   function selectImage(url: string) {
     setImageUrl(url);
-    setImageSize(null);
     setObjects(null);
     setError(null);
   }
@@ -76,6 +77,7 @@ export function SegmentPanel() {
     const file = event.target.files?.[0];
     if (!file) return;
     if (file.size > MAX_FILE_BYTES) {
+      selectImage("");
       setError("Choose an image of 3 MB or less.");
       return;
     }
