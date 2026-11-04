@@ -37,8 +37,14 @@ const MAX_ANSWER_EXCERPT = 800;
 /** Every id is sent back on each turn, so a much-visited concept can't grow forever. */
 const MAX_NODE_SOURCES = 20;
 
+/** Cut to the stored length first, so an overlong label still finds its node. */
 export function normalizeLabel(label: string): string {
-  return label.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+  return label
+    .trim()
+    .slice(0, MAX_LABEL)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, "");
 }
 
 export function findByLabel(
@@ -366,7 +372,7 @@ export function applyTurn(
 
   let placedLabels: TurnCallout["placed"] = [];
 
-  const finish = (plan: TurnPlan, pending: Pending | null): TurnResult => {
+  const finish = (plan: TurnPlan, pending: Pending | null = null): TurnResult => {
     const trail: TrailState = {
       nodes: draft.nodes,
       traces: draft.traces,
@@ -385,24 +391,19 @@ export function applyTurn(
     };
   };
 
-  const askRecall = (node: KnowledgeNode, returnToId: string | null) => {
-    node.lastPromptedAt = now;
-    return finish(
-      { kind: "recall_ask", nodeId: node.id },
-      {
-        kind: "recall",
-        nodeId: node.id,
-        // "What's next?" is no question to return to: answering it after the
-        // check would mean suggesting a topic.
-        originalQuestion: returnToId ? question : "",
-        returnToId,
-      },
-    );
-  };
+  const askRecall = (node: KnowledgeNode, returnToId: string | null) =>
+    finish({
+      kind: "recall_ask",
+      nodeId: node.id,
+      // "What's next?" is no question to return to: answering it after the check
+      // would mean suggesting a topic.
+      originalQuestion: returnToId ? question : "",
+      returnToId,
+    });
 
   // A reply to what the last turn asked. Anything else just moves on: an ignored
-  // recall check is dropped and never repeated. A thrown image always goes on the
-  // map, so it is never taken as a reply.
+  // recall check is dropped and never repeated. A thrown image is for the map, so
+  // it is never taken as a reply.
   const pending = message.imageId ? null : before.pending;
   if (pending?.kind === "recall") {
     const node = findById(draft.nodes, pending.nodeId);
@@ -417,17 +418,14 @@ export function applyTurn(
         nodeIds: [node.id],
         verdict,
       });
-      return finish(
-        {
-          kind: "recall_result",
-          nodeId: node.id,
-          verdict,
-          note: analysis?.recallNote?.trim() ?? "",
-          originalQuestion: pending.originalQuestion,
-          returnToId: pending.returnToId,
-        },
-        null,
-      );
+      return finish({
+        kind: "recall_result",
+        nodeId: node.id,
+        verdict,
+        note: analysis?.recallNote?.trim() ?? "",
+        originalQuestion: pending.originalQuestion,
+        returnToId: pending.returnToId,
+      });
     }
   }
   if (pending?.kind === "revisit") {
@@ -440,15 +438,12 @@ export function applyTurn(
         content: message.text,
         nodeIds: [node.id],
       });
-      return finish(
-        {
-          kind: "revisit_resume",
-          nodeId: node.id,
-          choice,
-          originalQuestion: pending.originalQuestion,
-        },
-        null,
-      );
+      return finish({
+        kind: "revisit_resume",
+        nodeId: node.id,
+        choice,
+        originalQuestion: pending.originalQuestion,
+      });
     }
   }
 
@@ -461,7 +456,7 @@ export function applyTurn(
     });
     // The reading failed, not the learner. Whatever was waiting can still be
     // answered on the next turn.
-    return finish({ kind: "answer", focusId: null }, pending);
+    return finish({ kind: "answer", focusId: null }, before.pending);
   }
 
   const previousTrace = before.traces.findLast(
@@ -488,9 +483,7 @@ export function applyTurn(
     });
   }
 
-  if (analysis.moment === "broad_wish") {
-    return finish({ kind: "open" }, null);
-  }
+  if (analysis.moment === "broad_wish") return finish({ kind: "open" });
 
   // Finishing a topic is a natural moment to test the oldest thing: if nothing
   // is due, it stays a plain "what next?" and never becomes a list of topics.
@@ -498,10 +491,10 @@ export function applyTurn(
     const overdue = pickRecall(oldestFirst(draft.nodes), before, now);
     if (overdue) return askRecall(overdue, null);
     const hole = draft.nodes.find((node) => node.state === "unseen");
-    return finish({ kind: "wander", holeId: hole?.id ?? null }, null);
+    return finish({ kind: "wander", holeId: hole?.id ?? null });
   }
 
-  if (!focus) return finish({ kind: "answer", focusId: null }, null);
+  if (!focus) return finish({ kind: "answer", focusId: null });
 
   // One thing at a time: fill a hole, else test memory, else acknowledge a
   // return. Only one of them happens in a turn.
@@ -510,18 +503,20 @@ export function applyTurn(
   );
   const hole = pickHole(focus, focusAnalysis, draft.nodes, before, now);
   if (hole) {
-    return finish(
-      {
-        kind: "gap",
-        focusId: focus.id,
-        gapId: hole.id,
-        reason: hole.state === "unseen" ? "never_seen" : "fuzzy",
-      },
-      null,
-    );
+    return finish({
+      kind: "gap",
+      focusId: focus.id,
+      gapId: hole.id,
+      reason: hole.state === "unseen" ? "never_seen" : "fuzzy",
+    });
   }
 
-  const recallNode = pickRecall(relatedConcepts(focus, draft.nodes), before, now);
+  // A thrown image can be the moment for a check, but one sent with a question
+  // needs its answer now: the image won't be there on the next turn.
+  const asksAboutImage = message.imageId !== null && message.text.trim() !== "";
+  const recallNode = asksAboutImage
+    ? undefined
+    : pickRecall(relatedConcepts(focus, draft.nodes), before, now);
   if (recallNode) return askRecall(recallNode, focus.id);
 
   const previous = findById(before.nodes, focus.id);
@@ -531,17 +526,19 @@ export function applyTurn(
     now - previousTrace.createdAt < FOLLOW_UP_WINDOW;
   if (
     analysis.moment === "coming_back" &&
+    !message.imageId &&
     previous &&
     previous.state !== "unseen" &&
     !isFollowUp
   ) {
-    return finish(
-      { kind: "revisit_offer", nodeId: focus.id },
-      { kind: "revisit", nodeId: focus.id, originalQuestion: question },
-    );
+    return finish({
+      kind: "revisit_offer",
+      nodeId: focus.id,
+      originalQuestion: question,
+    });
   }
 
-  return finish({ kind: "answer", focusId: focus.id }, null);
+  return finish({ kind: "answer", focusId: focus.id });
 }
 
 /** Runs once the reply has been delivered in full: what it explained now counts. */
@@ -552,6 +549,7 @@ export function completeTurn(
   context: TurnContext,
 ): TrailState {
   const draft = new TrailDraft(trail, context);
+  let pending = trail.pending;
   const excerpt = reply.trim().slice(0, MAX_ANSWER_EXCERPT);
   const addAnswer = (nodeIds: string[]) => {
     if (excerpt) {
@@ -587,14 +585,32 @@ export function completeTurn(
     case "revisit_resume":
       addAnswer([plan.nodeId]);
       break;
-    case "open":
-    case "recall_ask":
+    // A question only counts as asked once it has reached the learner. Otherwise
+    // their next message would be graded against something they never saw.
+    case "recall_ask": {
+      const node = findById(draft.nodes, plan.nodeId);
+      if (node) node.lastPromptedAt = context.now;
+      pending = {
+        kind: "recall",
+        nodeId: plan.nodeId,
+        originalQuestion: plan.originalQuestion,
+        returnToId: plan.returnToId,
+      };
+      break;
+    }
     case "revisit_offer":
+      pending = {
+        kind: "revisit",
+        nodeId: plan.nodeId,
+        originalQuestion: plan.originalQuestion,
+      };
+      break;
+    case "open":
     case "wander":
       break;
   }
 
-  return { ...trail, nodes: draft.nodes, traces: draft.traces };
+  return { ...trail, nodes: draft.nodes, traces: draft.traces, pending };
 }
 
 /** The concept a turn left off on, for the "you are here" marker. */

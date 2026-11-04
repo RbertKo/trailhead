@@ -163,7 +163,10 @@ describe("the demo scenario", () => {
     s.wait(7 * DAY);
 
     const asked = s.turn(asking("CNN", { prerequisites: ["역전파"] }), "CNN은 어떻게 학습해?");
-    expect(asked).toEqual({ kind: "recall_ask", nodeId: s.node("역전파").id });
+    expect(asked).toMatchObject({
+      kind: "recall_ask",
+      nodeId: s.node("역전파").id,
+    });
     expect(s.trail.pending).toEqual({
       kind: "recall",
       nodeId: s.node("역전파").id,
@@ -397,6 +400,22 @@ describe("recall checks", () => {
     expect(s.trail.focusId).toBe(s.node("강화학습").id);
   });
 
+  it("doesn't count a check as asked until the question has been delivered", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+
+    const { plan } = s.startTurn(asking("역전파"));
+    expect(plan.kind).toBe("recall_ask");
+    expect(s.trail.pending).toBeNull();
+    expect(s.node("역전파").lastPromptedAt).toBeNull();
+
+    // The reply failed or was stopped, so what comes next is not an answer.
+    s.turn({ ...asking("강화학습"), recallVerdict: "fuzzy" });
+    expect(s.node("역전파").state).toBe("seen");
+    expect(s.node("역전파").lastCheckedAt).toBeNull();
+  });
+
   it("tests at most one concept in a sitting", () => {
     const s = session();
     s.turn(asking("A"));
@@ -413,7 +432,7 @@ describe("recall checks", () => {
     s.turn(asking("A"));
     s.turn(asking("B"));
     s.wait(4 * DAY);
-    expect(s.turn(analysis({ moment: "wrapping_up" }), "이제 뭐 볼까")).toEqual({
+    expect(s.turn(analysis({ moment: "wrapping_up" }), "이제 뭐 볼까")).toMatchObject({
       kind: "recall_ask",
       nodeId: s.node("A").id,
     });
@@ -453,7 +472,10 @@ describe("coming back", () => {
       { ...asking("역전파"), moment: "coming_back" },
       "역전파 다시 알려줘",
     );
-    expect(offer).toEqual({ kind: "revisit_offer", nodeId: s.node("역전파").id });
+    expect(offer).toMatchObject({
+      kind: "revisit_offer",
+      nodeId: s.node("역전파").id,
+    });
 
     const resume = s.turn(analysis({ moment: "other", revisitChoice: "review" }));
     expect(resume).toMatchObject({
@@ -476,7 +498,10 @@ describe("coming back", () => {
     s.turn(asking("역전파"));
     s.wait(1 * DAY);
     const plan = s.turn({ ...asking("역전파"), moment: "coming_back" });
-    expect(plan).toEqual({ kind: "revisit_offer", nodeId: s.node("역전파").id });
+    expect(plan).toMatchObject({
+      kind: "revisit_offer",
+      nodeId: s.node("역전파").id,
+    });
   });
 
   it("moves on when the learner changes the subject instead of choosing", () => {
@@ -521,6 +546,46 @@ describe("an image thrown while a question is waiting", () => {
     const plan = s.turn({ ...thrown, revisitChoice: "continue" }, "", "image-1");
     expect(plan.kind).toBe("answer");
     expect(s.trail.pending).toBeNull();
+  });
+});
+
+describe("an image and memory checks", () => {
+  const thrown = {
+    ...asking("역전파"),
+    imageDescription: "A backpropagation diagram",
+  };
+
+  it("can test memory when a thrown image connects to something seen before", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    expect(s.turn(thrown, "", "image-1").kind).toBe("recall_ask");
+  });
+
+  it("answers right away when the image comes with a question", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    expect(s.turn(thrown, "여기 왜 에러나?", "image-1").kind).toBe("answer");
+  });
+
+  it("never turns an image into a continue-or-review offer", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.turn(asking("강화학습"));
+    const plan = s.turn({ ...thrown, moment: "coming_back" }, "", "image-1");
+    expect(plan.kind).toBe("answer");
+  });
+
+  it("keeps a waiting check when the reading of an image fails", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    s.turn(asking("역전파"));
+    expect(s.trail.pending?.kind).toBe("recall");
+
+    s.turn(null, "", "image-1");
+    expect(s.trail.pending?.kind).toBe("recall");
   });
 });
 
@@ -626,6 +691,14 @@ describe("placing concepts", () => {
     s.turn(asking("A", { prerequisites: ["B", "C", "D", "E"] }));
     expect(s.node("A").prerequisiteIds).toHaveLength(3);
     expect(s.trail.nodes).toHaveLength(4);
+  });
+
+  it("finds a node again by an overlong label", () => {
+    const s = session();
+    const long = "개념".repeat(100);
+    s.turn(asking(long));
+    s.turn(asking(long));
+    expect(s.trail.nodes).toHaveLength(1);
   });
 
   it("clamps oversized output so the next request still validates", () => {

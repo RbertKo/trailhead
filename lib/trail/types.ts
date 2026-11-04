@@ -11,8 +11,8 @@ export type NodeState = (typeof NODE_STATES)[number];
 
 // The browser holds the trail and sends it with each turn, so these limits are
 // what keep a turn's prompt, and therefore its cost, bounded.
-export const MAX_NODES = 200;
-export const MAX_TRACES = 500;
+export const MAX_NODES = 150;
+export const MAX_TRACES = 300;
 export const MAX_LABEL = 120;
 export const MAX_SUMMARY = 1_000;
 export const MAX_TRACE_CONTENT = 2_000;
@@ -109,7 +109,12 @@ export type TurnPlan =
       reason: "never_seen" | "fuzzy";
     }
   /** Test memory before saying anything about the concept. */
-  | { kind: "recall_ask"; nodeId: string }
+  | {
+      kind: "recall_ask";
+      nodeId: string;
+      originalQuestion: string;
+      returnToId: string | null;
+    }
   | {
       kind: "recall_result";
       nodeId: string;
@@ -120,7 +125,7 @@ export type TurnPlan =
       returnToId: string | null;
     }
   /** The learner came back to something: "continue, or review?". */
-  | { kind: "revisit_offer"; nodeId: string }
+  | { kind: "revisit_offer"; nodeId: string; originalQuestion: string }
   | {
       kind: "revisit_resume";
       nodeId: string;
