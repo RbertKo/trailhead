@@ -25,8 +25,10 @@ measure anything about ADHD or attention.
 
 ## What it does
 
-- **No curriculum.** Say "I want to learn AI" and it asks what you're most curious
-  about. Structure is the result of your questions, not the input to them.
+- **No curriculum up front.** Say "I want to learn AI" and it asks what you're most
+  curious about. Structure is the result of your questions, not the input to them. Once
+  you've asked a few things, or when you ask what's next, it offers a short path built
+  from them, as buttons you can ignore.
 - **Throw anything at it.** Drop or paste a screenshot, photo or diagram. Muse Spark
   works out what it is and places it on the map. It never asks where to file it.
 - **The trail draws itself.** Every question and every image grows the map. Wandering
@@ -100,7 +102,8 @@ to `127.0.0.1`, and the page then looks fine but does nothing.
 
 1. Say `AI 공부하고 싶어` ("I want to study AI"). No curriculum, just "what's most
    interesting?".
-2. Ask a question or two, and drop a screenshot. The trail grows on the right.
+2. Ask a question or two, and drop a screenshot. The trail grows on the right, and after
+   a few questions a short suggested path appears under the reply.
 3. Ask `역전파 설명해줘` ("explain backpropagation"). A hole appears for gradient descent.
    Only that piece gets explained, then the reply returns to backpropagation.
 4. Press **+7d** to simulate a week passing, then ask something related, such as
