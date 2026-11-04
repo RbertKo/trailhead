@@ -12,23 +12,14 @@ import { metaTextModel, metaTextOptions } from "@/lib/meta/client";
 import { segmentImage } from "@/lib/meta/segment";
 
 import { turnAnalysisSchema, type TurnAnalysis } from "./analysis";
-import type { Locale } from "./copy";
-import {
-  ANALYZER_SYSTEM,
-  analyzerInput,
-  type HistoryMessage,
-} from "./prompts";
+import { ANALYZER_SYSTEM, analyzerInput } from "./prompts";
+import type { HistoryMessage, IncomingMessage, Locale } from "./request";
 import type { DropRegion, TrailState } from "./types";
 
 // Reasoning tokens count toward this limit, so it has to leave room for the JSON.
 const MAX_ANALYSIS_TOKENS = 4096;
 const MAX_ATTEMPTS = 2;
 const SEGMENT_TIMEOUT_MS = 12_000;
-
-export interface IncomingMessage {
-  text: string;
-  image: { id: string; url: string } | null;
-}
 
 /** A user message for the Responses API, with its image if there is one. */
 export function userMessage(text: string, imageUrl?: string): ModelMessage {

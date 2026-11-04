@@ -1,6 +1,5 @@
+import type { Locale } from "./request";
 import type { NodeState, Trace } from "./types";
-
-export type Locale = "ko" | "en";
 
 export interface Copy {
   languageName: string;

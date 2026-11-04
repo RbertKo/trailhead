@@ -10,7 +10,8 @@ import { getMetaConfig, MissingApiKeyError } from "@/lib/meta/config";
 import { segmentImage } from "@/lib/meta/segment";
 import { analyzeTurn, userMessage } from "@/lib/trail/analyze";
 import { advanceTime, applyTurn, completeTurn } from "@/lib/trail/engine";
-import { replySystem, type HistoryMessage } from "@/lib/trail/prompts";
+import { replySystem } from "@/lib/trail/prompts";
+import type { HistoryMessage } from "@/lib/trail/request";
 import { EMPTY_TRAIL, type TrailState } from "@/lib/trail/types";
 
 const DAY = 24 * 60 * 60 * 1000;

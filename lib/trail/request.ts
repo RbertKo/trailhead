@@ -1,24 +1,45 @@
 import type { UIMessage } from "ai";
+import { z } from "zod";
 
-import type { Locale } from "./copy";
-import type { HistoryMessage } from "./prompts";
-import type { TrailState, TurnDataParts } from "./types";
+import {
+  droppedImageSchema,
+  trailStateSchema,
+  type TrailState,
+  type TurnDataParts,
+} from "./types";
 
 export const MAX_HISTORY = 20;
 export const MAX_HISTORY_TEXT = 4_000;
 export const MAX_MESSAGE_TEXT = 8_000;
 
+/** The body of one turn: what the browser sends and the API route validates. */
+export const turnRequestSchema = z.object({
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        text: z.string().max(MAX_HISTORY_TEXT),
+      }),
+    )
+    .max(MAX_HISTORY),
+  message: z
+    .object({
+      text: z.string().max(MAX_MESSAGE_TEXT),
+      image: droppedImageSchema.nullable(),
+    })
+    .refine(({ text, image }) => text.trim() !== "" || image !== null),
+  trail: trailStateSchema,
+  locale: z.enum(["ko", "en"]),
+});
+export type TurnRequest = z.infer<typeof turnRequestSchema>;
+export type HistoryMessage = TurnRequest["history"][number];
+export type IncomingMessage = TurnRequest["message"];
+export type Locale = TurnRequest["locale"];
+
 export type TrailUIMessage = UIMessage<
   { imageId?: string },
   TurnDataParts
 >;
-
-export interface TurnRequest {
-  history: HistoryMessage[];
-  message: { text: string; image: { id: string; url: string } | null };
-  trail: TrailState;
-  locale: Locale;
-}
 
 export function messageText(message: TrailUIMessage): string {
   return message.parts
