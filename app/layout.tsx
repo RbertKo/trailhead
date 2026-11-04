@@ -13,20 +13,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: {
-    default: "Hackathon Project",
-    template: "%s | Hackathon Project",
-  },
-  description: "A project built with Meta's AI models.",
+  title: "Trailhead",
+  description:
+    "A learning companion that follows your curiosity, draws the map afterwards, and checks what you actually remember.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="en"
-      className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="ko"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full">{children}</body>
     </html>
   );
 }
