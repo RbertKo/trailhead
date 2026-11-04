@@ -186,10 +186,6 @@
 .trail-prose li + li {
   margin-top: 0.25em;
 }
-.trail-prose a {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 .trail-prose code {
   border-radius: 0.3em;
   background: var(--muted);
