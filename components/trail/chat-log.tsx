@@ -36,6 +36,7 @@ export function ChatLog({
   regions,
   copy,
   onQuickReply,
+  onRetry,
 }: {
   messages: TrailUIMessage[];
   status: ChatStatus;
@@ -44,6 +45,7 @@ export function ChatLog({
   regions: Record<string, DropRegion>;
   copy: Copy;
   onQuickReply: (text: string) => void;
+  onRetry: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -141,7 +143,12 @@ export function ChatLog({
 
         {error && (
           <Alert variant="destructive" className="mt-5">
-            <AlertDescription>{readableChatError(error)}</AlertDescription>
+            <AlertDescription className="flex items-center justify-between gap-3">
+              {readableChatError(error)}
+              <Button variant="outline" size="xs" onClick={onRetry}>
+                {copy.retry}
+              </Button>
+            </AlertDescription>
           </Alert>
         )}
       </div>

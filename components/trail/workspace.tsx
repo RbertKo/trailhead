@@ -106,7 +106,7 @@ export function Workspace() {
     [rememberImage],
   );
 
-  const { messages, sendMessage, status, stop, error } =
+  const { messages, sendMessage, regenerate, status, stop, error } =
     useChat<TrailUIMessage>({
       transport,
       onData: (part) => {
@@ -127,6 +127,10 @@ export function Workspace() {
     latestRef.current = { input, isBusy };
   });
 
+  function requestOptions() {
+    return { body: { trail: trailRef.current, locale } };
+  }
+
   function send(text: string, image: DroppedImage | null) {
     const trimmed = text.trim();
     if (latestRef.current.isBusy || (!trimmed && !image)) return;
@@ -134,7 +138,7 @@ export function Workspace() {
     setNotice(null);
     sentImageRef.current = image;
 
-    const options = { body: { trail: trailRef.current, locale } };
+    const options = requestOptions();
     if (!image) {
       void sendMessage({ text: trimmed }, options);
       return;
@@ -211,6 +215,8 @@ export function Workspace() {
   }
 
   function handleDrop(event: DragEvent) {
+    // Dragging selected text into the message box should still work.
+    if (!event.dataTransfer.types.includes("Files")) return;
     event.preventDefault();
     setIsDragging(false);
     const file = event.dataTransfer.files[0];
@@ -258,6 +264,7 @@ export function Workspace() {
           regions={regions}
           copy={copy}
           onQuickReply={(text) => send(text, null)}
+          onRetry={() => void regenerate(requestOptions())}
         />
 
         <Composer

@@ -13,6 +13,7 @@ export interface Copy {
   send: string;
   stop: string;
   thinking: string;
+  retry: string;
   removeImage: string;
   droppedImageAlt: string;
   imageUnreadable: string;
@@ -71,6 +72,7 @@ export const COPY: Record<Locale, Copy> = {
     send: "보내기",
     stop: "멈추기",
     thinking: "지도를 살피는 중…",
+    retry: "다시 시도",
     removeImage: "이미지 빼기",
     droppedImageAlt: "던진 이미지",
     imageUnreadable: "이 이미지는 읽지 못했어. 다른 형식으로 다시 던져줘.",
@@ -145,6 +147,7 @@ export const COPY: Record<Locale, Copy> = {
     send: "Send",
     stop: "Stop",
     thinking: "Checking the map…",
+    retry: "Try again",
     removeImage: "Remove image",
     droppedImageAlt: "Dropped image",
     imageUnreadable: "That image couldn't be read. Try another format.",
