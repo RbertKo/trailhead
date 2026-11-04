@@ -1,6 +1,9 @@
 import type { ConceptAnalysis, TurnAnalysis } from "./analysis";
 import {
+  MAX_LABEL,
   MAX_NODES,
+  MAX_SUMMARY,
+  MAX_TRACE_CONTENT,
   MAX_TRACES,
   type KnowledgeNode,
   type Pending,
@@ -28,10 +31,9 @@ const GAP_COOLDOWN = 1 * HOUR;
 const RECALL_COOLDOWN = 10 * 60 * 1000;
 
 const MAX_PREREQUISITES = 3;
-const MAX_LABEL = 120;
-const MAX_SUMMARY = 1_000;
 const MAX_ANSWER_EXCERPT = 800;
-const MAX_TRACE_CONTENT = 2_000;
+/** Every id is sent back on each turn, so a much-visited concept can't grow forever. */
+const MAX_NODE_SOURCES = 20;
 
 export function normalizeLabel(label: string): string {
   return label.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
@@ -160,7 +162,7 @@ class TrailDraft {
     this.traces = [...this.traces, added].slice(-MAX_TRACES);
     for (const node of this.nodes) {
       if (added.nodeIds.includes(node.id)) {
-        node.sources = [...node.sources, added.id].slice(-MAX_TRACES);
+        node.sources = [...node.sources, added.id].slice(-MAX_NODE_SOURCES);
       }
     }
   }
@@ -198,14 +200,19 @@ class TrailDraft {
     node.lastTouchedAt = this.context.now;
   }
 
-  /** Refuses a link that would make a concept its own ancestor. */
+  /**
+   * Refuses a link that would make a concept its own ancestor. The trail comes
+   * from the browser, so it may already hold a cycle: `visited` stops the walk.
+   */
   setParent(child: KnowledgeNode, parent: KnowledgeNode) {
+    const visited = new Set<string>();
     for (
       let ancestor: KnowledgeNode | undefined = parent;
-      ancestor;
+      ancestor && !visited.has(ancestor.id);
       ancestor = findById(this.nodes, ancestor.parentId)
     ) {
       if (ancestor.id === child.id) return;
+      visited.add(ancestor.id);
     }
     child.parentId = parent.id;
   }
@@ -217,11 +224,10 @@ function placeConcepts(draft: TrailDraft, concepts: ConceptAnalysis[]) {
   const placed = concepts.flatMap((concept) => {
     const node = draft.ensureNode(concept.label);
     if (!node) return [];
-    const isNew = node.state === "unseen" && node.sources.length === 0;
     draft.meet(node);
     const summary = concept.summary.trim().slice(0, MAX_SUMMARY);
     if (summary) node.summary = summary;
-    return [{ concept, node, isNew }];
+    return [{ concept, node }];
   });
 
   for (const { concept, node } of placed) {
@@ -235,10 +241,9 @@ function placeConcepts(draft: TrailDraft, concepts: ConceptAnalysis[]) {
       if (child) draft.setParent(child, node);
     }
 
-    const prerequisites = concept.prerequisites
+    const prerequisites = prerequisiteLabels(concept, node)
       .slice(0, MAX_PREREQUISITES)
-      .flatMap((label) => draft.ensureNode(label) ?? [])
-      .filter((prerequisite) => prerequisite.id !== node.id);
+      .flatMap((label) => draft.ensureNode(label) ?? []);
     node.prerequisiteIds = [
       ...new Set([
         ...node.prerequisiteIds,
@@ -248,6 +253,22 @@ function placeConcepts(draft: TrailDraft, concepts: ConceptAnalysis[]) {
   }
 
   return placed;
+}
+
+/**
+ * The blocking prerequisite comes first, so the limit can never cut it off and
+ * a model that leaves it out of the list still gets it linked.
+ */
+function prerequisiteLabels(concept: ConceptAnalysis, node: KnowledgeNode) {
+  const taken = new Set([normalizeLabel(node.label)]);
+  return [concept.blockingPrerequisite, ...concept.prerequisites].filter(
+    (label): label is string => {
+      const key = normalizeLabel(label ?? "");
+      if (!key || taken.has(key)) return false;
+      taken.add(key);
+      return true;
+    },
+  );
 }
 
 /**
@@ -347,7 +368,12 @@ export function applyTurn(
     return {
       trail,
       plan,
-      callout: describePlan(plan, trail, placedLabels, analysis),
+      callout: describePlan(
+        plan,
+        trail,
+        placedLabels,
+        message.imageId ? analysis : null,
+      ),
     };
   };
 
@@ -355,13 +381,21 @@ export function applyTurn(
     node.lastPromptedAt = now;
     return finish(
       { kind: "recall_ask", nodeId: node.id },
-      { kind: "recall", nodeId: node.id, originalQuestion: question, returnToId },
+      {
+        kind: "recall",
+        nodeId: node.id,
+        // "What's next?" is no question to return to: answering it after the
+        // check would mean suggesting a topic.
+        originalQuestion: returnToId ? question : "",
+        returnToId,
+      },
     );
   };
 
   // A reply to what the last turn asked. Anything else just moves on: an ignored
-  // recall check is dropped and never repeated.
-  const pending = before.pending;
+  // recall check is dropped and never repeated. A thrown image always goes on the
+  // map, so it is never taken as a reply.
+  const pending = message.imageId ? null : before.pending;
   if (pending?.kind === "recall") {
     const node = findById(draft.nodes, pending.nodeId);
     const verdict = analysis?.recallVerdict;
@@ -424,10 +458,7 @@ export function applyTurn(
     (trace) => trace.type === "question" || trace.type === "drop",
   );
   const placed = placeConcepts(draft, analysis.concepts);
-  placedLabels = placed.map(({ node, isNew }) => ({
-    label: node.label,
-    isNew,
-  }));
+  placedLabels = placed.map(({ node }) => node.label);
   const focus =
     (analysis.focusLabel && findByLabel(draft.nodes, analysis.focusLabel)) ||
     placed[0]?.node;
@@ -575,7 +606,7 @@ function describePlan(
   plan: TurnPlan,
   trail: TrailState,
   placed: TurnCallout["placed"],
-  analysis: TurnAnalysis | null,
+  dropAnalysis: TurnAnalysis | null,
 ): TurnCallout {
   const label = (id: string | null) => findById(trail.nodes, id)?.label ?? null;
 
@@ -601,6 +632,7 @@ function describePlan(
     reason: plan.kind === "gap" ? plan.reason : null,
     verdict: plan.kind === "recall_result" ? plan.verdict : null,
     placed,
-    imageDescription: analysis?.imageDescription?.trim() || null,
+    imageDescription: dropAnalysis?.imageDescription?.trim() || null,
+    keyRegion: dropAnalysis?.keyRegion?.trim() || null,
   };
 }

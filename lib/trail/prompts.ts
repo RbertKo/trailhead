@@ -1,5 +1,5 @@
+import type { Locale } from "./copy";
 import { findById, lastAnswerFor } from "./engine";
-import type { TurnAnalysis } from "./analysis";
 import type { KnowledgeNode, TrailState, TurnPlan } from "./types";
 
 // Both prompts are in English so they stay stable and cacheable. Muse Spark
@@ -70,6 +70,12 @@ export interface HistoryMessage {
   text: string;
 }
 
+/** An image with no words gives no language to follow, so the interface's is used. */
+function languageNote(locale: Locale) {
+  const language = locale === "ko" ? "Korean" : "English";
+  return `The app is set to ${language}. Use ${language} when the learner's own language isn't clear, such as when they have only dropped an image.`;
+}
+
 const ANALYZER_HISTORY = 6;
 
 /** The text of the analyzer's user message. The image goes alongside it. */
@@ -77,6 +83,7 @@ export function analyzerInput(
   trail: TrailState,
   history: HistoryMessage[],
   message: { text: string; hasImage: boolean },
+  locale: Locale,
 ): string {
   const recent = history
     .slice(-ANALYZER_HISTORY)
@@ -86,8 +93,10 @@ export function analyzerInput(
   const pendingNode = trail.pending
     ? findById(trail.nodes, trail.pending.nodeId)
     : undefined;
-  const pendingNote =
-    trail.pending?.kind === "recall" && pendingNode
+  // A thrown image is always placed on the map, never taken as a reply.
+  const pendingNote = message.hasImage
+    ? "Nothing is pending."
+    : trail.pending?.kind === "recall" && pendingNode
       ? `A recall check is pending on "${pendingNode.label}". What they saw back then: ${
           lastAnswerFor(trail, pendingNode.id) ?? pendingNode.summary
         }`
@@ -102,6 +111,8 @@ Recent conversation:
 ${recent || "(none)"}
 
 ${pendingNote}
+
+${languageNote(locale)}
 
 The learner's new message${message.hasImage ? " (an image is attached)" : ""}:
 ${message.text || "(no text)"}`;
@@ -194,7 +205,8 @@ ${whatTheySaw(trail, node(plan.nodeId))}`;
 export function replySystem(
   plan: TurnPlan,
   trail: TrailState,
-  analysis: TurnAnalysis | null,
+  imageDescription: string | null,
+  locale: Locale,
 ): string {
   const onTheMap = trail.nodes
     .filter((node) => node.state !== "unseen")
@@ -203,10 +215,11 @@ export function replySystem(
 
   return [
     REPLY_RULES,
+    languageNote(locale),
     onTheMap &&
       `Already on their map: ${onTheMap}. Connect to these when it genuinely helps.`,
-    analysis?.imageDescription &&
-      `They dropped an image in this message, which shows: ${analysis.imageDescription}. It is already placed on their map, so never ask where to put it. Talk about what is actually in it.`,
+    imageDescription &&
+      `They dropped an image in this message, which shows: ${imageDescription}. It goes on their map by itself, so never ask where to put it. Talk about what is actually in it.`,
     `What to do in this reply:\n${planDirective(plan, trail)}`,
   ]
     .filter(Boolean)

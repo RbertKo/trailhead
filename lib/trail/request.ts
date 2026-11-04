@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
 
+import type { Locale } from "./copy";
 import type { HistoryMessage } from "./prompts";
 import type { TrailState, TurnDataParts } from "./types";
 
@@ -16,6 +17,7 @@ export interface TurnRequest {
   history: HistoryMessage[];
   message: { text: string; image: { id: string; url: string } | null };
   trail: TrailState;
+  locale: Locale;
 }
 
 export function messageText(message: TrailUIMessage): string {
@@ -52,6 +54,7 @@ function historyText(message: TrailUIMessage, next: TrailUIMessage | undefined) 
 export function buildTurnRequest(
   messages: TrailUIMessage[],
   trail: TrailState,
+  locale: Locale,
 ): TurnRequest {
   const last = messages.at(-1);
   if (!last) throw new Error("A turn needs a message");
@@ -78,5 +81,6 @@ export function buildTurnRequest(
           : null,
     },
     trail,
+    locale,
   };
 }

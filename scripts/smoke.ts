@@ -35,6 +35,7 @@ async function checkStructuredOutput(): Promise<string> {
     trail: EMPTY_TRAIL,
     history: [],
     message: { text: "역전파 설명해줘", image: null },
+    locale: "ko",
   });
   if (!analysis) throw new Error("No usable structured output");
   if (analysis.concepts.length === 0) throw new Error("No concepts returned");
@@ -58,7 +59,7 @@ async function checkReplyStream(): Promise<string> {
   );
   const result = streamText({
     model: metaTextModel(),
-    system: replySystem(turn.plan, turn.trail, null),
+    system: replySystem(turn.plan, turn.trail, null, "ko"),
     messages: [userMessage(message)],
     maxOutputTokens: 2048,
     providerOptions: metaTextOptions({ reasoningEffort: "low" }),
@@ -103,6 +104,7 @@ async function checkDropReading(): Promise<string> {
     trail: EMPTY_TRAIL,
     history: [],
     message: { text: "", image: dropped },
+    locale: "ko",
   });
   if (!analysis?.imageDescription) throw new Error("The image was not read");
   if (analysis.concepts.length === 0) throw new Error("Nothing to place");
@@ -132,6 +134,7 @@ async function checkDemoScript(): Promise<string> {
       trail,
       history,
       message: { text, image: null },
+      locale: "ko",
     });
     if (!analysis) throw new Error(`No usable reading for: ${text}`);
     const turn = applyTurn(trail, { text, imageId: null }, analysis, context());

@@ -49,12 +49,13 @@ function asking(label: string, overrides: Partial<ConceptAnalysis> = {}) {
   return analysis({ focusLabel: label, concepts: [concept(label, overrides)] });
 }
 
+let lastId = 0;
+
 /** Drives the engine turn by turn, the way the API route does. */
 function session(initial: TrailState = EMPTY_TRAIL, startAt = START) {
   let trail = initial;
   let now = startAt;
-  let counter = 0;
-  const context = () => ({ now, newId: () => `id-${++counter}` });
+  const context = () => ({ now, newId: () => `id-${++lastId}` });
 
   return {
     get trail() {
@@ -282,6 +283,31 @@ describe("holes", () => {
     expect(s.node("역전파").prerequisiteIds).toEqual([]);
   });
 
+  it("stops for a blocking prerequisite the model left out of the list", () => {
+    const s = session();
+    const plan = s.turn(
+      asking("역전파", {
+        prerequisites: ["A", "B", "C", "D"],
+        blockingPrerequisite: "경사하강법",
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "gap", gapId: s.node("경사하강법").id });
+    expect(s.node("역전파").prerequisiteIds).toHaveLength(3);
+    expect(s.node("역전파").prerequisiteIds[0]).toBe(s.node("경사하강법").id);
+  });
+
+  it("lists a prerequisite once when the model names it twice", () => {
+    const s = session();
+    s.turn(
+      asking("역전파", {
+        prerequisites: ["경사 하강법", "경사하강법"],
+        blockingPrerequisite: "경사하강법",
+      }),
+    );
+    expect(s.node("역전파").prerequisiteIds).toHaveLength(1);
+    expect(s.trail.nodes).toHaveLength(2);
+  });
+
   it("fills a hole when the learner asks about it directly", () => {
     const s = session();
     s.turn(asking("신경망", { prerequisites: ["행렬"] }));
@@ -349,6 +375,20 @@ describe("recall checks", () => {
     });
   });
 
+  it("has nothing to return to after a check raised by wrapping up", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.wait(4 * DAY);
+    s.turn(analysis({ moment: "wrapping_up" }), "이제 뭐 볼까");
+    expect(s.trail.pending).toMatchObject({
+      originalQuestion: "",
+      returnToId: null,
+    });
+
+    const graded = s.turn(analysis({ moment: "other", recallVerdict: "solid" }));
+    expect(graded).toMatchObject({ kind: "recall_result", originalQuestion: "" });
+  });
+
   it("offers one hole rather than a list when wrapping up with nothing due", () => {
     const s = session();
     s.turn(asking("신경망", { prerequisites: ["행렬", "미분"] }));
@@ -396,6 +436,96 @@ describe("coming back", () => {
     const plan = s.turn({ ...asking("CNN"), revisitChoice: "other" });
     expect(plan.kind).toBe("answer");
     expect(s.trail.pending).toBeNull();
+  });
+});
+
+describe("an image thrown while a question is waiting", () => {
+  const thrown = {
+    ...asking("활성화 함수"),
+    imageDescription: "A neuron diagram",
+    keyRegion: "diagram",
+  };
+
+  it("is placed on the map instead of being taken as a recall answer", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    expect(s.turn(asking("역전파")).kind).toBe("recall_ask");
+
+    const plan = s.turn(thrown, "", "image-1");
+    expect(plan.kind).toBe("answer");
+    expect(s.node("활성화 함수").state).toBe("seen");
+    expect(s.node("역전파").lastCheckedAt).toBeNull();
+    expect(s.trail.pending).toBeNull();
+    expect(s.trail.traces.find((t) => t.type === "drop")?.imageId).toBe("image-1");
+  });
+
+  it("is placed on the map instead of being taken as a revisit choice", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.turn(asking("강화학습"));
+    s.turn({ ...asking("역전파"), moment: "coming_back" });
+
+    const plan = s.turn({ ...thrown, revisitChoice: "continue" }, "", "image-1");
+    expect(plan.kind).toBe("answer");
+    expect(s.trail.pending).toBeNull();
+  });
+});
+
+describe("what a turn reports for the conversation", () => {
+  it("names the placed concepts, the reading and the region to look for", () => {
+    const { callout } = applyTurn(
+      EMPTY_TRAIL,
+      { text: "", imageId: "image-1" },
+      {
+        ...asking("활성화 함수"),
+        imageDescription: "A neuron diagram",
+        keyRegion: "diagram",
+      },
+      { now: START, newId: () => crypto.randomUUID() },
+    );
+    expect(callout).toMatchObject({
+      placed: ["활성화 함수"],
+      imageDescription: "A neuron diagram",
+      keyRegion: "diagram",
+    });
+  });
+
+  it("asks for no region when no image was sent", () => {
+    const { callout } = applyTurn(
+      EMPTY_TRAIL,
+      { text: "역전파", imageId: null },
+      { ...asking("역전파"), keyRegion: "diagram", imageDescription: "x" },
+      { now: START, newId: () => crypto.randomUUID() },
+    );
+    expect(callout.keyRegion).toBeNull();
+    expect(callout.imageDescription).toBeNull();
+  });
+});
+
+describe("a trail sent by the browser", () => {
+  it("does not hang on a parent cycle that is already in it", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    const [a, b] = s.trail.nodes;
+    const cyclic: TrailState = {
+      ...s.trail,
+      nodes: [
+        { ...a, parentId: b.id },
+        { ...b, parentId: a.id },
+      ],
+    };
+
+    const looped = session(cyclic);
+    looped.turn(asking("C", { parentLabel: "A" }));
+    expect(looped.node("C").parentId).toBe(a.id);
+  });
+
+  it("keeps a much-visited concept's sources bounded", () => {
+    const s = session();
+    for (let index = 0; index < 40; index += 1) s.turn(asking("A"));
+    expect(s.node("A").sources.length).toBeLessThanOrEqual(20);
   });
 });
 

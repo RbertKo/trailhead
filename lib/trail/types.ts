@@ -13,9 +13,9 @@ export type NodeState = (typeof NODE_STATES)[number];
 // what keep a turn's prompt, and therefore its cost, bounded.
 export const MAX_NODES = 200;
 export const MAX_TRACES = 500;
-const MAX_LABEL = 120;
-const MAX_SUMMARY = 1_000;
-const MAX_TRACE_CONTENT = 2_000;
+export const MAX_LABEL = 120;
+export const MAX_SUMMARY = 1_000;
+export const MAX_TRACE_CONTENT = 2_000;
 const MAX_ID = 64;
 
 const id = z.string().min(1).max(MAX_ID);
@@ -83,6 +83,12 @@ export const trailStateSchema = z.object({
 });
 export type TrailState = z.infer<typeof trailStateSchema>;
 
+/** Both the browser's encoder and Meta's API handle these formats. */
+export const droppedImageSchema = z.object({
+  id,
+  url: z.string().regex(/^data:image\/(jpeg|png|webp|gif);base64,/),
+});
+
 export const EMPTY_TRAIL: TrailState = {
   nodes: [],
   traces: [],
@@ -131,10 +137,12 @@ export interface TurnCallout {
   focusLabel: string | null;
   reason: "never_seen" | "fuzzy" | null;
   verdict: "solid" | "fuzzy" | null;
-  /** Concepts this turn added or touched, for "placed on the map" feedback. */
-  placed: { label: string; isNew: boolean }[];
+  /** Labels of the concepts this turn placed on the map. */
+  placed: string[];
   /** Muse Spark's reading of a dropped image. */
   imageDescription: string | null;
+  /** What SAM 3.1 should look for in a dropped image. */
+  keyRegion: string | null;
 }
 
 /** The part of a dropped image SAM 3.1 picked out, in the image's own pixels. */
@@ -151,5 +159,4 @@ export interface DropRegion {
 export type TurnDataParts = {
   trail: TrailState;
   callout: TurnCallout;
-  region: DropRegion;
 };

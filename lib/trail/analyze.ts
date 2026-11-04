@@ -3,6 +3,7 @@ import "server-only";
 import {
   generateText,
   NoObjectGeneratedError,
+  NoOutputGeneratedError,
   Output,
   type ModelMessage,
 } from "ai";
@@ -11,6 +12,7 @@ import { metaTextModel, metaTextOptions } from "@/lib/meta/client";
 import { segmentImage } from "@/lib/meta/segment";
 
 import { turnAnalysisSchema, type TurnAnalysis } from "./analysis";
+import type { Locale } from "./copy";
 import {
   ANALYZER_SYSTEM,
   analyzerInput,
@@ -51,14 +53,17 @@ export async function analyzeTurn(
     trail: TrailState;
     history: HistoryMessage[];
     message: IncomingMessage;
+    locale: Locale;
   },
   signal?: AbortSignal,
 ): Promise<TurnAnalysis | null> {
-  const { trail, history, message } = input;
-  const text = analyzerInput(trail, history, {
-    text: message.text,
-    hasImage: message.image !== null,
-  });
+  const { trail, history, message, locale } = input;
+  const text = analyzerInput(
+    trail,
+    history,
+    { text: message.text, hasImage: message.image !== null },
+    locale,
+  );
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -80,7 +85,11 @@ export async function analyzeTurn(
       });
       return output;
     } catch (error) {
-      if (!NoObjectGeneratedError.isInstance(error)) throw error;
+      // Invalid JSON, or no text at all, such as when reasoning used up the limit.
+      const isUnusable =
+        NoObjectGeneratedError.isInstance(error) ||
+        NoOutputGeneratedError.isInstance(error);
+      if (!isUnusable) throw error;
       console.error(
         `[trail] unusable analysis, attempt ${attempt}: ${error.message}`,
       );

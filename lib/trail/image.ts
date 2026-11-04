@@ -13,8 +13,9 @@ export interface DroppedImage {
 
 const MAX_SIDE = 1600;
 const THUMBNAIL_SIDE = 160;
-// A data URL this size stays under the API route's 4 MiB body limit.
-const MAX_DATA_URL = 3_500_000;
+// The API route takes 4 MiB per request, and that also has to carry the trail and
+// the recent conversation.
+const MAX_DATA_URL = 2_500_000;
 const MIN_REGION_SHARE = 0.03;
 
 function loadImage(source: string): Promise<HTMLImageElement> {
