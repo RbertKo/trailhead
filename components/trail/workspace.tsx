@@ -34,11 +34,30 @@ import { MapPane } from "./map-pane";
 
 const DAY = 24 * 60 * 60 * 1000;
 
+/** The region is an enhancement: if it can't be found, the turn stands as it is. */
+async function findRegion(image: DroppedImage, concept: string) {
+  try {
+    const response = await fetch("/api/region", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: { id: image.id, url: image.url },
+        concept,
+      }),
+    });
+    if (!response.ok) return null;
+    const { region } = (await response.json()) as { region: DropRegion | null };
+    return region;
+  } catch {
+    return null;
+  }
+}
+
 // The browser holds the trail, so each send passes the current one in `body`.
 const transport = new DefaultChatTransport<TrailUIMessage>({
   api: "/api/turn",
   prepareSendMessagesRequest: ({ messages, body }) => ({
-    body: buildTurnRequest(messages, body?.trail),
+    body: buildTurnRequest(messages, body?.trail, body?.locale),
   }),
 });
 
@@ -72,13 +91,17 @@ export function Workspace() {
     setImages(imagesRef.current);
   }, []);
 
+  // The image of the turn in flight, for when the reading names its key region.
+  const sentImageRef = useRef<DroppedImage | null>(null);
+
+  // Separate from the turn, so a slow search never holds up the reply or the input.
   const showRegion = useCallback(
-    async (region: DropRegion) => {
-      const dropped = imagesRef.current[region.imageId];
-      if (!dropped || !isUsefulRegion(dropped, region)) return;
-      setRegions((current) => ({ ...current, [region.imageId]: region }));
-      const thumbnail = await cropRegionThumbnail(dropped, region);
-      if (thumbnail) rememberImage({ ...dropped, thumbnail });
+    async (image: DroppedImage, concept: string) => {
+      const region = await findRegion(image, concept);
+      if (!region || !isUsefulRegion(image, region)) return;
+      setRegions((current) => ({ ...current, [image.id]: region }));
+      const thumbnail = await cropRegionThumbnail(image, region);
+      if (thumbnail) rememberImage({ ...image, thumbnail });
     },
     [rememberImage],
   );
@@ -88,10 +111,21 @@ export function Workspace() {
       transport,
       onData: (part) => {
         if (part.type === "data-trail") updateTrail(part.data);
-        if (part.type === "data-region") void showRegion(part.data);
+        if (part.type === "data-callout") {
+          const image = sentImageRef.current;
+          if (image && part.data.keyRegion) {
+            void showRegion(image, part.data.keyRegion);
+          }
+        }
       },
     });
   const isBusy = status === "submitted" || status === "streaming";
+
+  // Decoding an image takes a moment, and the learner may type or send meanwhile.
+  const latestRef = useRef({ input, isBusy });
+  useEffect(() => {
+    latestRef.current = { input, isBusy };
+  });
 
   function send(text: string, image: DroppedImage | null) {
     const trimmed = text.trim();
@@ -100,8 +134,9 @@ export function Workspace() {
     setNotice(null);
     setInput("");
     setAttached(null);
+    sentImageRef.current = image;
 
-    const options = { body: { trail: trailRef.current } };
+    const options = { body: { trail: trailRef.current, locale } };
     if (!image) {
       void sendMessage({ text: trimmed }, options);
       return;
@@ -125,7 +160,8 @@ export function Workspace() {
     }
     try {
       const image = await prepareImage(file);
-      if (input.trim() || isBusy) {
+      const latest = latestRef.current;
+      if (latest.input.trim() || latest.isBusy) {
         setAttached(image);
       } else {
         send("", image);
@@ -174,10 +210,13 @@ export function Workspace() {
     if (file) void throwFile(file);
   }
 
-  function passTime(days: number) {
-    updateTrail(advanceTime(trailRef.current, days * DAY, Date.now()));
-    setElapsedDays((current) => current + days);
-  }
+  const passTime = useCallback(
+    (days: number) => {
+      updateTrail(advanceTime(trailRef.current, days * DAY, Date.now()));
+      setElapsedDays((current) => current + days);
+    },
+    [updateTrail],
+  );
 
   return (
     <div

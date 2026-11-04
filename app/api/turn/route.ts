@@ -10,11 +10,7 @@ import { z } from "zod";
 import { reportApiError } from "@/lib/api/errors";
 import { parseJsonBody, upstreamErrorResponse } from "@/lib/api/http";
 import { metaTextModel, metaTextOptions } from "@/lib/meta/client";
-import {
-  analyzeTurn,
-  segmentKeyRegion,
-  userMessage,
-} from "@/lib/trail/analyze";
+import { analyzeTurn, userMessage } from "@/lib/trail/analyze";
 import { applyTurn, completeTurn } from "@/lib/trail/engine";
 import { replySystem } from "@/lib/trail/prompts";
 import {
@@ -23,15 +19,13 @@ import {
   MAX_MESSAGE_TEXT,
   type TrailUIMessage,
 } from "@/lib/trail/request";
-import { trailStateSchema } from "@/lib/trail/types";
+import { droppedImageSchema, trailStateSchema } from "@/lib/trail/types";
 
 // Vercel functions take at most 4.5 MB, and the browser shrinks images to fit.
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 // Reasoning tokens count toward this limit too.
 const MAX_REPLY_TOKENS = 4096;
-
-// The image formats both the browser's encoder and Meta's API accept.
-const IMAGE_DATA_URL = /^data:image\/(jpeg|png|webp|gif);base64,/;
+const CUT_OFF = ["error", "length", "content-filter"];
 
 const bodySchema = z.object({
   history: z
@@ -45,27 +39,26 @@ const bodySchema = z.object({
   message: z
     .object({
       text: z.string().max(MAX_MESSAGE_TEXT),
-      image: z
-        .object({
-          id: z.string().min(1).max(64),
-          url: z.string().regex(IMAGE_DATA_URL),
-        })
-        .nullable(),
+      image: droppedImageSchema.nullable(),
     })
     .refine(({ text, image }) => text.trim() !== "" || image !== null),
   trail: trailStateSchema,
+  locale: z.enum(["ko", "en"]),
 });
 
 export async function POST(request: Request) {
   const body = await parseJsonBody(request, bodySchema, MAX_BODY_BYTES);
   if ("response" in body) return body.response;
-  const { history, message, trail } = body.data;
+  const { history, message, trail, locale } = body.data;
 
   // The reading comes first, so a bad key or missing billing is a plain HTTP
   // error and the map only changes once the turn is known to be going ahead.
   let analysis;
   try {
-    analysis = await analyzeTurn({ trail, history, message }, request.signal);
+    analysis = await analyzeTurn(
+      { trail, history, message, locale },
+      request.signal,
+    );
   } catch (error) {
     return upstreamErrorResponse(error);
   }
@@ -80,14 +73,19 @@ export async function POST(request: Request) {
 
   const stream = createUIMessageStream<TrailUIMessage>({
     onError: (error) => reportApiError(error).message,
-    execute: async ({ writer }) => {
+    execute: ({ writer }) => {
       writer.write({ type: "start" });
       writer.write({ type: "data-trail", data: turn.trail, transient: true });
       writer.write({ type: "data-callout", data: turn.callout });
 
       const result = streamText({
         model: metaTextModel(),
-        system: replySystem(turn.plan, turn.trail, analysis),
+        system: replySystem(
+          turn.plan,
+          turn.trail,
+          turn.callout.imageDescription,
+          locale,
+        ),
         messages: [
           ...history.map(({ role, text }) => ({ role, content: text })),
           userMessage(message.text, message.image?.url),
@@ -97,7 +95,7 @@ export async function POST(request: Request) {
         abortSignal: request.signal,
         onEnd: ({ text, finishReason }) => {
           // A hole only counts as filled once the explanation was really delivered.
-          if (finishReason === "error" || !text.trim()) return;
+          if (CUT_OFF.includes(finishReason) || !text.trim()) return;
           writer.write({
             type: "data-trail",
             data: completeTurn(turn.trail, turn.plan, text, {
@@ -117,18 +115,6 @@ export async function POST(request: Request) {
           onError: (error) => reportApiError(error).message,
         }),
       );
-
-      // Runs beside the reply and keeps the stream open until it has settled.
-      if (message.image && analysis?.keyRegion) {
-        const region = await segmentKeyRegion(
-          message.image,
-          analysis.keyRegion,
-          request.signal,
-        );
-        if (region) {
-          writer.write({ type: "data-region", data: region, transient: true });
-        }
-      }
     },
   });
 
