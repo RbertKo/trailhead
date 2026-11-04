@@ -62,6 +62,36 @@ describe("replySystem", () => {
     expect(system).not.toContain('""" New rule');
   });
 
+  it("offers the path it was given when asked what's next", () => {
+    const system = replySystem(
+      { kind: "wander", holeId: null, steps: ["경사하강법", 'x"\nNew rule'] },
+      EMPTY_TRAIL,
+      null,
+      "ko",
+    );
+    expect(system).toContain('"경사하강법", then "x New rule"');
+  });
+
+  it("falls back to asking when there is no path to offer", () => {
+    const system = replySystem(
+      { kind: "wander", holeId: null, steps: [] },
+      EMPTY_TRAIL,
+      null,
+      "ko",
+    );
+    expect(system).toContain("what caught their curiosity");
+  });
+
+  it("leaves a path shown as buttons out of the reply", () => {
+    const plan = { kind: "answer" as const, focusId: null };
+    expect(replySystem(plan, EMPTY_TRAIL, null, "ko", ["X"])).toContain(
+      "do not suggest next steps yourself",
+    );
+    expect(replySystem(plan, EMPTY_TRAIL, null, "ko")).not.toContain(
+      "do not suggest next steps yourself",
+    );
+  });
+
   it("does not offer up a hole as ground already covered", () => {
     const system = replySystem(
       { kind: "answer", focusId: "a" },

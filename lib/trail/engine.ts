@@ -37,6 +37,12 @@ const FOLLOW_UP_WINDOW = 1 * HOUR;
 
 const MAX_PREREQUISITES = 3;
 const MAX_CONCEPTS_PER_TURN = 3;
+/**
+ * Curiosity comes first, so nothing is offered up front. After this many questions
+ * there is enough of a trail to suggest where it could go, without being asked.
+ */
+const QUESTIONS_BEFORE_OFFER = 3;
+const MAX_NEXT_STEPS = 3;
 const MAX_ANSWER_EXCERPT = 800;
 
 /** Cut to the stored length first, so an overlong label still finds its node. */
@@ -341,6 +347,30 @@ function pickRecall(
   });
 }
 
+/**
+ * A short path from the model's suggestions: somewhere new, or a hole or fuzzy spot
+ * on the map, but not ground already covered or what this turn is already explaining.
+ */
+function pickNextSteps(
+  labels: string[],
+  nodes: KnowledgeNode[],
+  excludeIds: string[],
+): string[] {
+  const taken = new Set<string>();
+  const steps: string[] = [];
+  for (const label of labels) {
+    const key = normalizeLabel(label);
+    if (!key || taken.has(key) || steps.length === MAX_NEXT_STEPS) continue;
+    taken.add(key);
+
+    const node = findByLabel(nodes, label);
+    const isCovered = node?.state === "seen" || node?.state === "solid";
+    if (isCovered || (node && excludeIds.includes(node.id))) continue;
+    steps.push(node?.label ?? label.trim().slice(0, MAX_LABEL));
+  }
+  return steps;
+}
+
 function oldestFirst(nodes: KnowledgeNode[]) {
   return [...nodes].sort((a, b) => a.lastTouchedAt - b.lastTouchedAt);
 }
@@ -374,6 +404,8 @@ export function applyTurn(
   ).slice(0, MAX_TRACE_CONTENT);
 
   let placedLabels: TurnCallout["placed"] = [];
+  let nextSteps: string[] = [];
+  let questionsSinceOffer = before.questionsSinceOffer;
 
   const finish = (plan: TurnPlan, pending: Pending | null = null): TurnResult => {
     const trail: TrailState = {
@@ -381,6 +413,7 @@ export function applyTurn(
       traces: draft.traces,
       pending,
       focusId: planFocusId(plan) ?? before.focusId,
+      questionsSinceOffer,
     };
     return {
       trail,
@@ -390,6 +423,7 @@ export function applyTurn(
         trail,
         placedLabels,
         message.imageId ? analysis : null,
+        nextSteps,
       ),
     };
   };
@@ -409,9 +443,7 @@ export function applyTurn(
     return finish({
       kind: "recall_ask",
       nodeId: node.id,
-      // "What's next?" is no question to return to: answering it after the check
-      // would mean suggesting a topic.
-      originalQuestion: returnToId ? question : "",
+      originalQuestion: question,
       returnToId,
     });
   };
@@ -484,6 +516,8 @@ export function applyTurn(
     placed[0]?.node;
   if (focus) draft.meet(focus);
 
+  if (focus) questionsSinceOffer += 1;
+
   if (message.imageId || focus) {
     draft.addTrace({
       type: message.imageId ? "drop" : "question",
@@ -506,13 +540,19 @@ export function applyTurn(
     return finish({ kind: "open" });
   }
 
-  // Finishing a topic is a natural moment to test the oldest thing: if nothing
-  // is due, it stays a plain "what next?" and never becomes a list of topics.
+  // Finishing a topic is a natural moment to test the oldest thing. If nothing is
+  // due, "what's next?" gets a short path, because that is what they asked for.
   if (analysis.moment === "wrapping_up" && !asksAboutImage) {
     const overdue = pickRecall(oldestFirst(draft.nodes), before, now);
     if (overdue) return askRecall(overdue, null);
     const hole = draft.nodes.find((node) => node.state === "unseen");
-    return finish({ kind: "wander", holeId: hole?.id ?? null });
+    nextSteps = pickNextSteps(analysis.nextSteps, draft.nodes, []);
+    if (nextSteps.length > 0) questionsSinceOffer = 0;
+    return finish({
+      kind: "wander",
+      holeId: hole?.id ?? null,
+      steps: nextSteps,
+    });
   }
 
   if (!focus) return finish({ kind: "answer", focusId: null });
@@ -522,8 +562,16 @@ export function applyTurn(
   const focusAnalysis = analysis.concepts.find(
     (concept) => normalizeLabel(concept.label) === normalizeLabel(focus.label),
   );
+  // Offered next to an answer, once enough questions have made a trail to go on.
+  const offerNextSteps = (excludeIds: string[]) => {
+    if (questionsSinceOffer < QUESTIONS_BEFORE_OFFER) return;
+    nextSteps = pickNextSteps(analysis.nextSteps, draft.nodes, excludeIds);
+    if (nextSteps.length > 0) questionsSinceOffer = 0;
+  };
+
   const hole = pickHole(focus, focusAnalysis, draft.nodes, before, now);
   if (hole) {
+    offerNextSteps([focus.id, hole.id]);
     return finish({
       kind: "gap",
       focusId: focus.id,
@@ -559,6 +607,7 @@ export function applyTurn(
     });
   }
 
+  offerNextSteps([focus.id]);
   return finish({ kind: "answer", focusId: focus.id });
 }
 
@@ -666,6 +715,7 @@ function describePlan(
   trail: TrailState,
   placed: TurnCallout["placed"],
   dropAnalysis: TurnAnalysis | null,
+  nextSteps: string[],
 ): TurnCallout {
   const label = (id: string | null) => findById(trail.nodes, id)?.label ?? null;
 
@@ -695,5 +745,6 @@ function describePlan(
       dropAnalysis?.imageDescription?.trim().slice(0, MAX_SUMMARY) || null,
     keyRegion:
       dropAnalysis?.keyRegion?.trim().slice(0, MAX_REGION_CONCEPT) || null,
+    nextSteps,
   };
 }

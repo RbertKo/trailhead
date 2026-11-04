@@ -1,7 +1,8 @@
 "use client";
 
 import type { ChatStatus } from "ai";
-import { useEffect, useRef } from "react";
+import { ArrowRight, Route } from "lucide-react";
+import { Fragment, useEffect, useRef } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,13 @@ export function ChatLog({
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [status]);
 
+  // Only under the latest reply: an older suggestion has already been passed by.
+  const lastMessage = messages.at(-1);
+  const nextSteps =
+    status === "ready" && lastMessage?.role === "assistant"
+      ? (messageCallout(lastMessage)?.nextSteps ?? [])
+      : [];
+
   return (
     <div
       ref={scrollRef}
@@ -114,6 +122,32 @@ export function ChatLog({
           <p className="mt-5 animate-pulse text-sm text-muted-foreground motion-reduce:animate-none">
             {copy.thinking}
           </p>
+        )}
+
+        {nextSteps.length > 0 && !offersRevisit && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 animate-in fade-in duration-500">
+            <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+              <Route className="size-3.5" aria-hidden />
+              {copy.nextStepsTitle}
+            </span>
+            {nextSteps.map((label, index) => (
+              <Fragment key={label}>
+                {index > 0 && (
+                  <ArrowRight
+                    className="size-3 text-muted-foreground"
+                    aria-hidden
+                  />
+                )}
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => onQuickReply(copy.askAbout(label))}
+                >
+                  {label}
+                </Button>
+              </Fragment>
+            ))}
+          </div>
         )}
 
         {offersRevisit && status === "ready" && (

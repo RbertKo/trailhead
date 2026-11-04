@@ -13,7 +13,7 @@ moment
 - broad_wish: they want to learn a whole field and ask nothing specific ("AI 공부하고 싶어", "teach me programming"). concepts is empty and focusLabel is null.
 - question: they ask about, or show, something specific.
 - coming_back: they ask again about a concept already on the map, rather than asking something new about it ("역전파 다시 알려줘").
-- wrapping_up: they signal they are done with a topic or ask what to look at next, without asking anything specific ("got it", "이제 뭐 볼까?").
+- wrapping_up: they signal they are done with a topic, or ask what to look at next or for a plan, without asking about anything specific ("got it", "이제 뭐 볼까?", "순서 좀 잡아줘").
 - other: small talk, or anything else that is not about a concept. concepts is empty.
 
 concepts
@@ -26,6 +26,8 @@ concepts
 - blockingPrerequisite: the one prerequisite an explanation of this concept cannot work without, because the concept is defined in terms of it. For example, deriving the quadratic formula is blocked by completing the square, and closures are blocked by variable scope. Use null for big-picture or introductory questions ("what is a neural network?", "how does ChatGPT work?"), which can be explained intuitively first. Report it whether or not the learner has seen it: the app decides whether to stop for it.
 
 focusLabel: the label of the main concept in concepts. Null if concepts is empty.
+
+nextSteps: up to 3 concepts, in order, that would make good next stops for this learner, given what they have been curious about and the holes on their map. Use the exact label for anything on the map, and otherwise a short, common name in their language. Leave out what they are asking about now and what they have already covered. This is a small suggestion they can ignore, not a curriculum. Empty when they have not asked about anything specific yet.
 
 If an image is attached
 - Work out what it shows (screenshot, photo, diagram, code, notes) and treat it as a question about that.
@@ -128,7 +130,7 @@ ${message.text ? quoted(message.text) : "(no text)"}`;
 const REPLY_RULES = `You are Trailhead, a study companion for someone with ADHD who learns by following their curiosity. They ask whatever they want, in any order, and you go along with it.
 
 Always:
-- Never offer a curriculum, roadmap, table of contents or list of topics to study, even when asked. If asked, say you would rather follow what they are curious about, and ask what that is.
+- Start from their curiosity. Never lead with a curriculum, roadmap or table of contents, and never assign anything. A short, optional path comes later, built from what they have been asking: only when the instructions below call for it, or when they ask for one and have asked about something first. If they ask before that, ask what they are most curious about.
 - Never ask them to organise anything, review later or come back. Never mention streaks, scores or how focused they are. Wandering off topic is fine, and you never steer them back.
 - You help with learning. Say nothing about diagnosis, symptoms, treatment or their attention.
 - Keep it short: about 120 words or 400 Korean characters at most, or half again as much if this turn has several steps. One idea per paragraph. A concrete example beats a definition.
@@ -202,11 +204,17 @@ ${whatTheySaw(trail, node(plan.nodeId))}`
 ${whatTheySaw(trail, node(plan.nodeId))}`;
 
     case "wander":
-      return `They are looking around for what to do next. Do not list topics or suggest a path. Ask in one sentence what caught their curiosity.${
-        plan.holeId
-          ? ` You may add that one spot on their map is still unexplored: ${label(plan.holeId)}. Mention only that one, as an option they can ignore.`
-          : ""
-      }`;
+      return plan.steps.length > 0
+        ? `They are looking for what to do next, so offer a short path built from where they have been: ${plan.steps
+            .map((step) => `"${plainName(step)}"`)
+            .join(
+              ", then ",
+            )}. Say in a few words why each one fits what they have been curious about, in at most three short lines, and nothing beyond these. No schedule and no homework: it is an offer they can ignore, and these appear as buttons under your reply.`
+        : `They are looking around for what to do next. Ask in one sentence what caught their curiosity.${
+            plan.holeId
+              ? ` You may add that one spot on their map is still unexplored: ${label(plan.holeId)}.`
+              : ""
+          }`;
   }
 }
 
@@ -215,6 +223,7 @@ export function replySystem(
   trail: TrailState,
   imageDescription: string | null,
   locale: Locale,
+  nextSteps: string[] = [],
 ): string {
   const onTheMap = trail.nodes
     .filter((node) => node.state !== "unseen")
@@ -228,6 +237,9 @@ export function replySystem(
       `Already on their map: ${onTheMap}. Connect to these when it genuinely helps.`,
     imageDescription &&
       `They dropped an image in this message, which shows: ${quoted(imageDescription)}. It goes on their map by itself, so never ask where to put it. When you talk about it, talk about what is actually in it.`,
+    plan.kind !== "wander" &&
+      nextSteps.length > 0 &&
+      "The app will show a suggested path as buttons under your reply, so do not suggest next steps yourself.",
     `What to do in this reply:\n${planDirective(plan, trail)}`,
   ]
     .filter(Boolean)

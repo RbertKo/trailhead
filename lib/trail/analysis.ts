@@ -39,6 +39,11 @@ export const turnAnalysisSchema = z.object({
     .nullable()
     .describe("The main concept of this message: a label from `concepts`."),
   concepts: z.array(conceptSchema),
+  nextSteps: z
+    .array(z.string())
+    .describe(
+      "Up to 3 concepts, in order, that would make good next stops for this learner.",
+    ),
   imageDescription: z
     .string()
     .nullable()

@@ -69,6 +69,7 @@ export async function POST(request: Request) {
           turn.trail,
           turn.callout.imageDescription,
           locale,
+          turn.callout.nextSteps,
         ),
         messages: [
           ...history.map(({ role, text }) => ({ role, content: text })),

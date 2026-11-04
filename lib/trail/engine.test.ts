@@ -36,6 +36,7 @@ function analysis(overrides: Partial<TurnAnalysis> = {}): TurnAnalysis {
     moment: "question",
     focusLabel: null,
     concepts: [],
+    nextSteps: [],
     imageDescription: null,
     keyRegion: null,
     recallVerdict: null,
@@ -555,26 +556,30 @@ describe("recall checks", () => {
     });
   });
 
-  it("has nothing to return to after a check raised by wrapping up", () => {
+  it("comes back to 'what's next?' after a check raised by wrapping up", () => {
     const s = session();
     s.turn(asking("A"));
     s.wait(4 * DAY);
     s.turn(analysis({ moment: "wrapping_up" }), "이제 뭐 볼까");
     expect(s.trail.pending).toMatchObject({
-      originalQuestion: "",
+      originalQuestion: "이제 뭐 볼까",
       returnToId: null,
     });
 
     const graded = s.turn(analysis({ moment: "other", recallVerdict: "solid" }));
-    expect(graded).toMatchObject({ kind: "recall_result", originalQuestion: "" });
+    expect(graded).toMatchObject({
+      kind: "recall_result",
+      originalQuestion: "이제 뭐 볼까",
+    });
   });
 
-  it("offers one hole rather than a list when wrapping up with nothing due", () => {
+  it("has a hole to mention when wrapping up with nothing to suggest", () => {
     const s = session();
     s.turn(asking("신경망", { prerequisites: ["행렬", "미분"] }));
     expect(s.turn(analysis({ moment: "wrapping_up" }))).toEqual({
       kind: "wander",
       holeId: s.node("행렬").id,
+      steps: [],
     });
   });
 });
@@ -630,6 +635,104 @@ describe("coming back", () => {
     const plan = s.turn({ ...asking("CNN"), revisitChoice: "other" });
     expect(plan.kind).toBe("answer");
     expect(s.trail.pending).toBeNull();
+  });
+});
+
+describe("offering a path", () => {
+  const withSteps = (label: string, nextSteps: string[]) => ({
+    ...asking(label),
+    nextSteps,
+  });
+
+  function reported(s: ReturnType<typeof session>, turn: TurnAnalysis) {
+    const { callout } = s.startTurn(turn);
+    return callout.nextSteps;
+  }
+
+  it("offers nothing up front", () => {
+    const s = session();
+    expect(reported(s, withSteps("A", ["B", "C"]))).toEqual([]);
+  });
+
+  it("offers a short path once a few questions have made a trail", () => {
+    const s = session();
+    s.turn(withSteps("A", ["X"]));
+    s.turn(withSteps("B", ["X"]));
+    expect(reported(s, withSteps("C", ["X", "Y", "Z"]))).toEqual(["X", "Y", "Z"]);
+  });
+
+  it("waits for a few more questions before offering again", () => {
+    const s = session();
+    s.turn(withSteps("A", ["X"]));
+    s.turn(withSteps("B", ["X"]));
+    s.turn(withSteps("C", ["X"]));
+    expect(s.trail.questionsSinceOffer).toBe(0);
+
+    s.turn(withSteps("D", ["X"]));
+    s.turn(withSteps("E", ["X"]));
+    expect(reported(s, withSteps("F", ["X"]))).toEqual(["X"]);
+  });
+
+  it("keeps waiting when there is nothing new to suggest yet", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    s.turn(asking("C"));
+    expect(s.trail.questionsSinceOffer).toBe(3);
+    expect(reported(s, withSteps("D", ["X"]))).toEqual(["X"]);
+  });
+
+  it("doesn't count small talk as a question", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(analysis({ moment: "other" }));
+    s.turn(analysis({ moment: "other" }));
+    expect(s.trail.questionsSinceOffer).toBe(1);
+  });
+
+  it("suggests new ground and holes, not what is already covered", () => {
+    const s = session();
+    s.turn(asking("A", { prerequisites: ["hole"] }));
+    s.turn(asking("B"));
+    expect(
+      reported(s, withSteps("C", ["A", "C", "Hole", "new one", "extra", "more"])),
+    ).toEqual(["hole", "new one", "extra"]);
+  });
+
+  it("doesn't suggest the hole this reply is already filling", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    const { plan, callout } = s.startTurn({
+      ...asking("역전파", {
+        prerequisites: ["경사하강법"],
+        blockingPrerequisite: "경사하강법",
+      }),
+      nextSteps: ["경사하강법", "CNN"],
+    });
+    expect(plan.kind).toBe("gap");
+    expect(callout.nextSteps).toEqual(["CNN"]);
+  });
+
+  it("doesn't interrupt a question it is waiting on", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    s.wait(4 * DAY);
+    const { plan, callout } = s.startTurn(withSteps("A", ["X"]));
+    expect(plan.kind).toBe("recall_ask");
+    expect(callout.nextSteps).toEqual([]);
+  });
+
+  it("answers 'what's next?' with a path whenever it is asked", () => {
+    const s = session();
+    s.turn(asking("A"));
+    const plan = s.turn({
+      ...analysis({ moment: "wrapping_up" }),
+      nextSteps: ["X", "Y"],
+    });
+    expect(plan).toEqual({ kind: "wander", holeId: null, steps: ["X", "Y"] });
+    expect(s.trail.questionsSinceOffer).toBe(0);
   });
 });
 

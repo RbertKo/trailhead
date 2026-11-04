@@ -46,6 +46,7 @@ async function checkStructuredOutput(): Promise<string> {
     concepts: analysis.concepts.map((concept) => concept.label),
     prerequisites: analysis.concepts[0].prerequisites,
     blocking: analysis.concepts[0].blockingPrerequisite,
+    nextSteps: analysis.nextSteps,
   });
 }
 

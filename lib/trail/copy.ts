@@ -52,6 +52,8 @@ export interface Copy {
   imageReadTitle: string;
   continueReply: string;
   reviewReply: string;
+  nextStepsTitle: string;
+  askAbout: (label: string) => string;
 }
 
 const MINUTE = 60_000;
@@ -133,6 +135,8 @@ export const COPY: Record<Locale, Copy> = {
     imageReadTitle: "이미지 읽음",
     continueReply: "이어서 할래",
     reviewReply: "복습할래",
+    nextStepsTitle: "이어서 볼 만한 길",
+    askAbout: (label) => `${label} 알려줘`,
   },
   en: {
     languageName: "English",
@@ -208,5 +212,7 @@ export const COPY: Record<Locale, Copy> = {
     imageReadTitle: "Read the image",
     continueReply: "Continue from there",
     reviewReply: "Review it",
+    nextStepsTitle: "Where this could go next",
+    askAbout: (label) => `Tell me about ${label}`,
   },
 };

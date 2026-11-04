@@ -34,6 +34,7 @@ function assistant(text: string, callout?: Partial<TurnCallout>): TrailUIMessage
                 placed: [],
                 imageDescription: null,
                 keyRegion: null,
+                nextSteps: [],
                 ...callout,
               } satisfies TurnCallout,
             },

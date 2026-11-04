@@ -83,6 +83,8 @@ export const trailStateSchema = z.object({
   pending: pendingSchema.nullable(),
   /** The concept the conversation is on: "you are here" on the map. */
   focusId: id.nullable(),
+  /** Questions asked since a path was last offered. */
+  questionsSinceOffer: z.number().int().nonnegative(),
 });
 export type TrailState = z.infer<typeof trailStateSchema>;
 
@@ -100,6 +102,7 @@ export const EMPTY_TRAIL: TrailState = {
   traces: [],
   pending: null,
   focusId: null,
+  questionsSinceOffer: 0,
 };
 
 /** What this turn does. Decided by the engine, carried out by the reply model. */
@@ -138,8 +141,8 @@ export type TurnPlan =
       choice: "continue" | "review";
       originalQuestion: string;
     }
-  /** Looking around for what's next: never answer with a list of topics. */
-  | { kind: "wander"; holeId: string | null };
+  /** Looking for what's next: offer a short path built from where they've been. */
+  | { kind: "wander"; holeId: string | null; steps: string[] };
 
 /** Shown in the conversation. Labels are resolved so messages stay readable. */
 export interface TurnCallout {
@@ -154,6 +157,8 @@ export interface TurnCallout {
   imageDescription: string | null;
   /** What SAM 3.1 should look for in a dropped image. */
   keyRegion: string | null;
+  /** A short path offered as buttons after this reply. They can be ignored. */
+  nextSteps: string[];
 }
 
 /** The part of a dropped image SAM 3.1 picked out, in the image's own pixels. */
