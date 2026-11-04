@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
-import { COPY, type Locale } from "@/lib/trail/copy";
+import { COPY } from "@/lib/trail/copy";
 import { advanceTime } from "@/lib/trail/engine";
 import {
   cropRegionThumbnail,
@@ -21,7 +21,11 @@ import {
   prepareImage,
   type DroppedImage,
 } from "@/lib/trail/image";
-import { buildTurnRequest, type TrailUIMessage } from "@/lib/trail/request";
+import {
+  buildTurnRequest,
+  type Locale,
+  type TrailUIMessage,
+} from "@/lib/trail/request";
 import {
   EMPTY_TRAIL,
   type DropRegion,
@@ -93,6 +97,8 @@ export function Workspace() {
 
   // The image of the turn in flight, for when the reading names its key region.
   const sentImageRef = useRef<DroppedImage | null>(null);
+  // The trail as the turn in flight found it, so a retry can start over from it.
+  const trailBeforeTurnRef = useRef(trail);
 
   // Separate from the turn, so a slow search never holds up the reply or the input.
   const showRegion = useCallback(
@@ -122,9 +128,9 @@ export function Workspace() {
   const isBusy = status === "submitted" || status === "streaming";
 
   // Decoding an image takes a moment, and the learner may type or send meanwhile.
-  const latestRef = useRef({ input, isBusy });
+  const latestRef = useRef({ input, attached, isBusy });
   useEffect(() => {
-    latestRef.current = { input, isBusy };
+    latestRef.current = { input, attached, isBusy };
   });
 
   function requestOptions() {
@@ -137,6 +143,7 @@ export function Workspace() {
 
     setNotice(null);
     sentImageRef.current = image;
+    trailBeforeTurnRef.current = trailRef.current;
 
     const options = requestOptions();
     if (!image) {
@@ -163,7 +170,7 @@ export function Workspace() {
     try {
       const image = await prepareImage(file);
       const latest = latestRef.current;
-      if (latest.input.trim() || latest.isBusy) {
+      if (latest.input.trim() || latest.attached || latest.isBusy) {
         setAttached(image);
       } else {
         send("", image);
@@ -171,6 +178,11 @@ export function Workspace() {
     } catch {
       setNotice(copy.imageUnreadable);
     }
+  }
+
+  function retryTurn() {
+    updateTrail(trailBeforeTurnRef.current);
+    void regenerate(requestOptions());
   }
 
   function submitComposer() {
@@ -259,12 +271,13 @@ export function Workspace() {
         <ChatLog
           messages={messages}
           status={status}
+          offersRevisit={trail.pending?.kind === "revisit"}
           error={error}
           notice={notice}
           regions={regions}
           copy={copy}
           onQuickReply={(text) => send(text, null)}
-          onRetry={() => void regenerate(requestOptions())}
+          onRetry={retryTurn}
         />
 
         <Composer

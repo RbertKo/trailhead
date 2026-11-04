@@ -2,6 +2,7 @@ import type { ConceptAnalysis, TurnAnalysis } from "./analysis";
 import {
   MAX_LABEL,
   MAX_NODES,
+  MAX_REGION_CONCEPT,
   MAX_SUMMARY,
   MAX_TRACE_CONTENT,
   MAX_TRACES,
@@ -662,6 +663,7 @@ function describePlan(
     verdict: plan.kind === "recall_result" ? plan.verdict : null,
     placed,
     imageDescription: dropAnalysis?.imageDescription?.trim() || null,
-    keyRegion: dropAnalysis?.keyRegion?.trim() || null,
+    keyRegion:
+      dropAnalysis?.keyRegion?.trim().slice(0, MAX_REGION_CONCEPT) || null,
   };
 }

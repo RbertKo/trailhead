@@ -6,21 +6,13 @@ import {
   toUIMessageStream,
   type FinishReason,
 } from "ai";
-import { z } from "zod";
-
 import { reportApiError } from "@/lib/api/errors";
 import { parseJsonBody, upstreamErrorResponse } from "@/lib/api/http";
 import { metaTextModel, metaTextOptions } from "@/lib/meta/client";
 import { analyzeTurn, userMessage } from "@/lib/trail/analyze";
 import { applyTurn, completeTurn } from "@/lib/trail/engine";
 import { replySystem } from "@/lib/trail/prompts";
-import {
-  MAX_HISTORY,
-  MAX_HISTORY_TEXT,
-  MAX_MESSAGE_TEXT,
-  type TrailUIMessage,
-} from "@/lib/trail/request";
-import { droppedImageSchema, trailStateSchema } from "@/lib/trail/types";
+import { turnRequestSchema, type TrailUIMessage } from "@/lib/trail/request";
 
 // Vercel functions take at most 4.5 MB, and the browser shrinks images to fit.
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -35,27 +27,8 @@ const CUT_OFF: FinishReason[] = [
   "interrupted",
 ];
 
-const bodySchema = z.object({
-  history: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        text: z.string().max(MAX_HISTORY_TEXT),
-      }),
-    )
-    .max(MAX_HISTORY),
-  message: z
-    .object({
-      text: z.string().max(MAX_MESSAGE_TEXT),
-      image: droppedImageSchema.nullable(),
-    })
-    .refine(({ text, image }) => text.trim() !== "" || image !== null),
-  trail: trailStateSchema,
-  locale: z.enum(["ko", "en"]),
-});
-
 export async function POST(request: Request) {
-  const body = await parseJsonBody(request, bodySchema, MAX_BODY_BYTES);
+  const body = await parseJsonBody(request, turnRequestSchema, MAX_BODY_BYTES);
   if ("response" in body) return body.response;
   const { history, message, trail, locale } = body.data;
 
@@ -68,6 +41,9 @@ export async function POST(request: Request) {
       request.signal,
     );
   } catch (error) {
+    // The learner pressed Stop. That isn't a Meta API failure, so it isn't logged
+    // as one, and there's nobody left to read a response.
+    if (request.signal.aborted) return new Response(null, { status: 499 });
     return upstreamErrorResponse(error);
   }
 

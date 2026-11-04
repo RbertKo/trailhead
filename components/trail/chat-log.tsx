@@ -31,6 +31,7 @@ function isNearBottom(element: HTMLElement) {
 export function ChatLog({
   messages,
   status,
+  offersRevisit,
   error,
   notice,
   regions,
@@ -40,6 +41,7 @@ export function ChatLog({
 }: {
   messages: TrailUIMessage[];
   status: ChatStatus;
+  offersRevisit: boolean;
   error: Error | undefined;
   notice: string | null;
   regions: Record<string, DropRegion>;
@@ -71,12 +73,6 @@ export function ChatLog({
     const scroller = scrollRef.current;
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [status]);
-
-  const last = messages.at(-1);
-  const offersRevisit =
-    status === "ready" &&
-    last?.role === "assistant" &&
-    messageCallout(last)?.kind === "revisit_offer";
 
   return (
     <div
@@ -120,7 +116,7 @@ export function ChatLog({
           </p>
         )}
 
-        {offersRevisit && (
+        {offersRevisit && status === "ready" && (
           <div className="mt-3 flex flex-wrap gap-2">
             {[copy.continueReply, copy.reviewReply].map((reply) => (
               <Button

@@ -608,6 +608,16 @@ describe("what a turn reports for the conversation", () => {
     });
   });
 
+  it("keeps the region to what the SAM route accepts", () => {
+    const { callout } = applyTurn(
+      EMPTY_TRAIL,
+      { text: "", imageId: "image-1" },
+      { ...asking("역전파"), keyRegion: "very long phrase ".repeat(20) },
+      { now: START, newId: () => crypto.randomUUID() },
+    );
+    expect(callout.keyRegion?.length).toBeLessThanOrEqual(100);
+  });
+
   it("asks for no region when no image was sent", () => {
     const { callout } = applyTurn(
       EMPTY_TRAIL,

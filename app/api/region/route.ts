@@ -2,13 +2,13 @@ import { z } from "zod";
 
 import { parseJsonBody } from "@/lib/api/http";
 import { segmentKeyRegion } from "@/lib/trail/analyze";
-import { droppedImageSchema } from "@/lib/trail/types";
+import { droppedImageSchema, MAX_REGION_CONCEPT } from "@/lib/trail/types";
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 const bodySchema = z.object({
   image: droppedImageSchema,
-  concept: z.string().trim().min(1).max(100),
+  concept: z.string().trim().min(1).max(MAX_REGION_CONCEPT),
 });
 
 /**

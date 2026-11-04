@@ -83,6 +83,9 @@ export const trailStateSchema = z.object({
 });
 export type TrailState = z.infer<typeof trailStateSchema>;
 
+/** What SAM 3.1 is asked to find: a short noun phrase. */
+export const MAX_REGION_CONCEPT = 100;
+
 /** Both the browser's encoder and Meta's API handle these formats. */
 export const droppedImageSchema = z.object({
   id,
