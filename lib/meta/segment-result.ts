@@ -22,6 +22,15 @@ export function toSegmentedObjects(
     throw new Error(`SAM segmentation ended early: ${detail}`);
   }
 
+  // The parser drops malformed lines and reports them here. Without this check,
+  // a broken response would look the same as "nothing matched".
+  const dropped = result.diagnostics.find(
+    (diagnostic) => diagnostic.severity === "error",
+  );
+  if (dropped) {
+    throw new Error(`SAM output could not be parsed: ${dropped.code}`);
+  }
+
   // A completed response with no records is a valid "nothing matched".
   return recordsOfKind(result.records, "mask").map((record) => ({
     objectId: record.objectId,

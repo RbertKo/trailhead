@@ -44,6 +44,14 @@ describe("toSegmentedObjects", () => {
     expect(toSegmentedObjects(result)).toEqual([]);
   });
 
+  it("rejects output the parser had to drop instead of reporting no matches", async () => {
+    const result = await parseImageStream(
+      events("<0f>0<|box;broken|>\n"),
+    ).finalResult;
+
+    expect(() => toSegmentedObjects(result)).toThrow(/could not be parsed/);
+  });
+
   it("rejects a response that ended early", async () => {
     const result = await parseImageStream(
       events(TWO_OBJECTS, {
