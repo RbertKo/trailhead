@@ -174,7 +174,7 @@ export const COPY: Record<Locale, Copy> = {
 
     timeLabel: "Simulate time passing",
     plusDays: (days) => `+${days}d`,
-    elapsed: (days) => `${days} days later`,
+    elapsed: (days) => `${days} ${days === 1 ? "day" : "days"} later`,
 
     close: "Close",
     needs: "Needs first",

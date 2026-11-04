@@ -16,6 +16,9 @@ export const MAX_TRACES = 300;
 export const MAX_LABEL = 120;
 export const MAX_SUMMARY = 1_000;
 export const MAX_TRACE_CONTENT = 2_000;
+/** A much-visited concept can't grow forever: all of this is resent every turn. */
+export const MAX_NODE_SOURCES = 20;
+export const MAX_NODE_PREREQUISITES = 8;
 const MAX_ID = 64;
 
 const id = z.string().min(1).max(MAX_ID);
@@ -27,8 +30,8 @@ export const knowledgeNodeSchema = z.object({
   summary: z.string().max(MAX_SUMMARY),
   state: z.enum(NODE_STATES),
   parentId: id.nullable(),
-  prerequisiteIds: z.array(id).max(MAX_NODES),
-  sources: z.array(id).max(MAX_TRACES),
+  prerequisiteIds: z.array(id).max(MAX_NODE_PREREQUISITES),
+  sources: z.array(id).max(MAX_NODE_SOURCES),
   firstSeenAt: time,
   lastTouchedAt: time,
   lastCheckedAt: time.nullable(),

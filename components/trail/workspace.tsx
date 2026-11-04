@@ -237,7 +237,14 @@ export function Workspace() {
 
   const passTime = useCallback(
     (days: number) => {
-      updateTrail(advanceTime(trailRef.current, days * DAY, Date.now()));
+      const now = Date.now();
+      updateTrail(advanceTime(trailRef.current, days * DAY, now));
+      // A retry goes back to this, and time has passed for it too.
+      trailBeforeTurnRef.current = advanceTime(
+        trailBeforeTurnRef.current,
+        days * DAY,
+        now,
+      );
       setElapsedDays((current) => current + days);
     },
     [updateTrail],

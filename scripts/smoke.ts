@@ -76,8 +76,13 @@ async function checkReplyStream(): Promise<string> {
   if (streamError) throw streamError;
   const text = await result.text;
   if (!text.trim()) throw new Error("The reply was empty");
+  // Anything else and the app won't count a reply as delivered, so a hole it
+  // explains would never fill in.
   const finishReason = await result.finishReason;
-  return `${chunks} chunks, finish: ${finishReason}: ${text.trim().slice(0, 80)}…`;
+  if (finishReason !== "stop") {
+    throw new Error(`The reply finished with "${finishReason}", not "stop"`);
+  }
+  return `${chunks} chunks: ${text.trim().slice(0, 80)}…`;
 }
 
 let dropped: { id: string; url: string } | undefined;

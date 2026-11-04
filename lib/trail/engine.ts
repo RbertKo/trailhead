@@ -1,6 +1,8 @@
 import type { ConceptAnalysis, TurnAnalysis } from "./analysis";
 import {
   MAX_LABEL,
+  MAX_NODE_PREREQUISITES,
+  MAX_NODE_SOURCES,
   MAX_NODES,
   MAX_REGION_CONCEPT,
   MAX_SUMMARY,
@@ -34,9 +36,8 @@ const RECALL_COOLDOWN = 10 * 60 * 1000;
 const FOLLOW_UP_WINDOW = 1 * HOUR;
 
 const MAX_PREREQUISITES = 3;
+const MAX_CONCEPTS_PER_TURN = 3;
 const MAX_ANSWER_EXCERPT = 800;
-/** Every id is sent back on each turn, so a much-visited concept can't grow forever. */
-const MAX_NODE_SOURCES = 20;
 
 /** Cut to the stored length first, so an overlong label still finds its node. */
 export function normalizeLabel(label: string): string {
@@ -223,15 +224,16 @@ class TrailDraft {
 
 function placeConcepts(draft: TrailDraft, concepts: ConceptAnalysis[]) {
   // Every concept exists before any link is made, so concepts in one response
-  // can refer to each other in any order.
-  const placed = concepts.flatMap((concept) => {
+  // can refer to each other in any order. Two spellings of one concept count once.
+  const placed: { concept: ConceptAnalysis; node: KnowledgeNode }[] = [];
+  for (const concept of concepts.slice(0, MAX_CONCEPTS_PER_TURN)) {
     const node = draft.ensureNode(concept.label);
-    if (!node) return [];
+    if (!node || placed.some((entry) => entry.node.id === node.id)) continue;
     draft.meet(node);
     const summary = concept.summary.trim().slice(0, MAX_SUMMARY);
     if (summary) node.summary = summary;
-    return [{ concept, node }];
-  });
+    placed.push({ concept, node });
+  }
 
   for (const { concept, node } of placed) {
     const parent = concept.parentLabel
@@ -252,7 +254,7 @@ function placeConcepts(draft: TrailDraft, concepts: ConceptAnalysis[]) {
         ...node.prerequisiteIds,
         ...prerequisites.map((prerequisite) => prerequisite.id),
       ]),
-    ];
+    ].slice(-MAX_NODE_PREREQUISITES);
   }
 
   return placed;
@@ -423,7 +425,7 @@ export function applyTurn(
         kind: "recall_result",
         nodeId: node.id,
         verdict,
-        note: analysis?.recallNote?.trim() ?? "",
+        note: analysis?.recallNote?.trim().slice(0, MAX_SUMMARY) ?? "",
         originalQuestion: pending.originalQuestion,
         returnToId: pending.returnToId,
       });
@@ -484,11 +486,17 @@ export function applyTurn(
     });
   }
 
-  if (analysis.moment === "broad_wish") return finish({ kind: "open" });
+  // An image sent with a question needs its answer now: it won't be there on the
+  // next turn. So it is never put off, whatever else the message seems to be.
+  const asksAboutImage = message.imageId !== null && message.text.trim() !== "";
+
+  if (analysis.moment === "broad_wish" && !asksAboutImage) {
+    return finish({ kind: "open" });
+  }
 
   // Finishing a topic is a natural moment to test the oldest thing: if nothing
   // is due, it stays a plain "what next?" and never becomes a list of topics.
-  if (analysis.moment === "wrapping_up") {
+  if (analysis.moment === "wrapping_up" && !asksAboutImage) {
     const overdue = pickRecall(oldestFirst(draft.nodes), before, now);
     if (overdue) return askRecall(overdue, null);
     const hole = draft.nodes.find((node) => node.state === "unseen");
@@ -512,9 +520,8 @@ export function applyTurn(
     });
   }
 
-  // A thrown image can be the moment for a check, but one sent with a question
-  // needs its answer now: the image won't be there on the next turn.
-  const asksAboutImage = message.imageId !== null && message.text.trim() !== "";
+  // A thrown image alone can be the moment for a check: it may connect to
+  // something seen before.
   const recallNode = asksAboutImage
     ? undefined
     : pickRecall(relatedConcepts(focus, draft.nodes), before, now);
@@ -662,7 +669,8 @@ function describePlan(
     reason: plan.kind === "gap" ? plan.reason : null,
     verdict: plan.kind === "recall_result" ? plan.verdict : null,
     placed,
-    imageDescription: dropAnalysis?.imageDescription?.trim() || null,
+    imageDescription:
+      dropAnalysis?.imageDescription?.trim().slice(0, MAX_SUMMARY) || null,
     keyRegion:
       dropAnalysis?.keyRegion?.trim().slice(0, MAX_REGION_CONCEPT) || null,
   };

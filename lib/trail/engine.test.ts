@@ -562,6 +562,24 @@ describe("an image and memory checks", () => {
     expect(s.turn(thrown, "", "image-1").kind).toBe("recall_ask");
   });
 
+  it("answers an image sent with words even if they sound like wrapping up", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    const plan = s.turn(
+      { ...thrown, moment: "wrapping_up" },
+      "이해했어, 이건 뭐야?",
+      "image-1",
+    );
+    expect(plan.kind).toBe("answer");
+
+    const wish = session();
+    expect(
+      wish.turn({ ...thrown, moment: "broad_wish" }, "AI 공부하고 싶어", "image-2")
+        .kind,
+    ).toBe("answer");
+  });
+
   it("answers right away when the image comes with a question", () => {
     const s = session();
     s.turn(asking("역전파"));
@@ -694,6 +712,44 @@ describe("placing concepts", () => {
     s.turn(asking("역전파", { parentLabel: "존재하지 않는 개념" }));
     expect(s.node("역전파").parentId).toBeNull();
     expect(s.trail.nodes).toHaveLength(1);
+  });
+
+  it("places a concept once when the model spells it two ways", () => {
+    const s = session();
+    s.turn(
+      analysis({
+        focusLabel: "역전파",
+        concepts: [
+          concept("역전파", { summary: "the first" }),
+          concept("역 전파", { summary: "the second" }),
+        ],
+      }),
+    );
+    expect(s.trail.nodes).toHaveLength(1);
+    expect(s.node("역전파").summary).toBe("the first");
+  });
+
+  it("places at most three concepts from one response", () => {
+    const s = session();
+    s.turn(
+      analysis({
+        concepts: ["A", "B", "C", "D", "E"].map((label) => concept(label)),
+      }),
+    );
+    expect(s.trail.nodes).toHaveLength(3);
+  });
+
+  it("keeps a concept's prerequisites bounded across many visits", () => {
+    const s = session();
+    for (let index = 0; index < 6; index += 1) {
+      s.turn(
+        asking("A", {
+          prerequisites: [`p${index}`, `q${index}`, `r${index}`],
+        }),
+      );
+    }
+    expect(s.node("A").prerequisiteIds.length).toBeLessThanOrEqual(8);
+    expect(s.node("A").prerequisiteIds).toContain(s.node("r5").id);
   });
 
   it("keeps at most three prerequisites from one response", () => {

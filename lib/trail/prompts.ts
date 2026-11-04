@@ -47,7 +47,7 @@ If a continue-or-review offer is pending, report revisitChoice: continue, review
 
 /** Trail text is partly the learner's and partly read from their images. */
 function quoted(text: string) {
-  return `"""${text.replaceAll('"""', '"')}"""`;
+  return `"""${text.replace(/"{3,}/g, '"')}"""`;
 }
 
 /** A concept name, kept to one line and unable to close the quotes around it. */
