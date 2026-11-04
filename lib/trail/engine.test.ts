@@ -300,6 +300,83 @@ describe("nothing counts as seen until the reply has been delivered", () => {
     expect(s.node("경사하강법").state).toBe("seen");
   });
 
+  it("records the explanation for every concept the question was about", () => {
+    const s = session();
+    s.turn(
+      analysis({
+        focusLabel: "CNN",
+        concepts: [concept("CNN"), concept("RNN")],
+      }),
+      "CNN이랑 RNN 차이가 뭐야?",
+      null,
+      "the comparison",
+    );
+    expect(lastAnswerFor(s.trail, s.node("CNN").id)).toBe("the comparison");
+    expect(lastAnswerFor(s.trail, s.node("RNN").id)).toBe("the comparison");
+  });
+
+  it("does the same when the reply also fills a hole", () => {
+    const s = session();
+    s.turn(
+      analysis({
+        focusLabel: "CNN",
+        concepts: [
+          concept("CNN", {
+            prerequisites: ["역전파"],
+            blockingPrerequisite: "역전파",
+          }),
+          concept("RNN"),
+        ],
+      }),
+      "CNN이랑 RNN 차이가 뭐야?",
+      null,
+      "backprop, then the comparison",
+    );
+    for (const label of ["역전파", "CNN", "RNN"]) {
+      expect(s.node(label).state).toBe("seen");
+      expect(lastAnswerFor(s.trail, s.node(label).id)).toBe(
+        "backprop, then the comparison",
+      );
+    }
+  });
+
+  it("finishes every concept of a question resumed after a recall check", () => {
+    const s = session();
+    s.turn(asking("역전파"), "역전파?", null, "backprop explanation");
+    s.wait(4 * DAY);
+
+    const asked = s.turn(
+      analysis({
+        focusLabel: "CNN",
+        concepts: [concept("CNN", { prerequisites: ["역전파"] }), concept("RNN")],
+      }),
+      "CNN이랑 RNN 차이가 뭐야?",
+    );
+    expect(asked.kind).toBe("recall_ask");
+    expect(s.node("CNN").state).toBe("unseen");
+    expect(s.node("RNN").state).toBe("unseen");
+
+    s.turn(
+      analysis({ moment: "other", recallVerdict: "solid" }),
+      "오차를 거꾸로 보내",
+      null,
+      "the comparison",
+    );
+    expect(s.node("CNN").state).toBe("seen");
+    expect(s.node("RNN").state).toBe("seen");
+    expect(lastAnswerFor(s.trail, s.node("RNN").id)).toBe("the comparison");
+    expect(lastAnswerFor(s.trail, s.node("역전파").id)).toBe("backprop explanation");
+  });
+
+  it("leaves everything unseen when a check raised by wrapping up has no question", () => {
+    const s = session();
+    s.turn(asking("A", { prerequisites: ["hole"] }));
+    s.wait(4 * DAY);
+    s.turn(analysis({ moment: "wrapping_up" }), "이제 뭐 볼까");
+    s.turn(analysis({ moment: "other", recallVerdict: "solid" }));
+    expect(s.node("hole").state).toBe("unseen");
+  });
+
   it("doesn't mark anything for small talk", () => {
     const s = session();
     s.turn(asking("신경망", { prerequisites: ["행렬"] }));

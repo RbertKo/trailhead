@@ -634,12 +634,14 @@ export function completeTurn(
       });
     }
   };
-  // What the question in this turn was about has now been explained.
-  const meetWhatWasAsked = () => {
-    const asked = trail.traces.findLast(
+  // Every concept the question was about, not only the main one. After a recall
+  // check this is still the question the check interrupted.
+  const asked =
+    trail.traces.findLast(
       (trace) => trace.type === "question" || trace.type === "drop",
-    );
-    for (const id of asked?.nodeIds ?? []) {
+    )?.nodeIds ?? [];
+  const meetAll = (nodeIds: string[]) => {
+    for (const id of nodeIds) {
       const node = findById(draft.nodes, id);
       if (node) draft.meet(node);
     }
@@ -653,20 +655,20 @@ export function completeTurn(
         if (hole.state === "fuzzy") hole.state = "seen";
         draft.meet(hole);
       }
-      meetWhatWasAsked();
-      addAnswer([plan.gapId, plan.focusId]);
+      meetAll(asked);
+      addAnswer([plan.gapId, plan.focusId, ...asked]);
       break;
     }
     case "answer":
       if (plan.focusId) {
-        meetWhatWasAsked();
-        addAnswer([plan.focusId]);
+        meetAll(asked);
+        addAnswer([plan.focusId, ...asked]);
       }
       break;
     case "recall_result": {
       // The question the check interrupted has now been answered.
-      const returnTo = findById(draft.nodes, plan.returnToId);
-      if (returnTo) draft.meet(returnTo);
+      const resumed = plan.returnToId ? [plan.returnToId, ...asked] : [];
+      meetAll(resumed);
 
       // Only what this reply explained counts as explained. A passed check is
       // acknowledged, not re-taught, so the concept keeps its earlier explanation
@@ -675,7 +677,7 @@ export function completeTurn(
       // again is not remembering.
       const explained = [
         ...(plan.verdict === "fuzzy" ? [plan.nodeId] : []),
-        ...(plan.returnToId ? [plan.returnToId] : []),
+        ...resumed,
       ].filter((id) => plan.verdict === "fuzzy" || id !== plan.nodeId);
       if (explained.length > 0) addAnswer(explained);
       break;
