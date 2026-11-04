@@ -90,6 +90,7 @@ export function SegmentPanel() {
     event.preventDefault();
     setPending(true);
     setError(null);
+    setObjects(null);
     try {
       const result = await postJson<{ objects: SegmentedObject[] }>(
         "/api/segment",
@@ -106,17 +107,20 @@ export function SegmentPanel() {
   return (
     <div className="flex flex-col gap-4">
       <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+        {/* Locked while a request runs, so its masks cannot land on a new image. */}
         <Input
           value={imageUrl.startsWith("data:") ? "" : imageUrl}
           onChange={(event) => selectImage(event.target.value)}
           placeholder="https://… image URL"
           aria-label="Image URL"
+          disabled={pending}
         />
         <Input
           type="file"
           accept="image/*"
           onChange={handleFile}
           aria-label="Image file"
+          disabled={pending}
         />
         <div className="flex gap-2">
           <Input
