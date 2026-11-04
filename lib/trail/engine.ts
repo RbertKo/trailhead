@@ -557,8 +557,9 @@ export function applyTurn(
 
   if (!focus) return finish({ kind: "answer", focusId: null });
 
-  // One thing at a time: fill a hole, else test memory, else acknowledge a
-  // return. Only one of them happens in a turn.
+  // One thing at a time: test memory, else fill a hole, else acknowledge a return.
+  // A check only comes up after days away and at most once a sitting, while a hole
+  // can be filled on any turn, so a check that is due goes first.
   const focusAnalysis = analysis.concepts.find(
     (concept) => normalizeLabel(concept.label) === normalizeLabel(focus.label),
   );
@@ -574,6 +575,13 @@ export function applyTurn(
     if (nextSteps.length > 0) questionsSinceOffer = 0;
   };
 
+  // A thrown image alone can be the moment for a check: it may connect to
+  // something seen before.
+  const recallNode = asksAboutImage
+    ? undefined
+    : pickRecall(relatedConcepts(focus, draft.nodes), before, now);
+  if (recallNode) return askRecall(recallNode, focus.id);
+
   const hole = pickHole(focus, focusAnalysis, draft.nodes, askedNow, before, now);
   if (hole) {
     offerNextSteps([...askedNow, hole]);
@@ -584,13 +592,6 @@ export function applyTurn(
       reason: hole.state === "unseen" ? "never_seen" : "fuzzy",
     });
   }
-
-  // A thrown image alone can be the moment for a check: it may connect to
-  // something seen before.
-  const recallNode = asksAboutImage
-    ? undefined
-    : pickRecall(relatedConcepts(focus, draft.nodes), before, now);
-  if (recallNode) return askRecall(recallNode, focus.id);
 
   const previous = findById(before.nodes, focus.id);
   const isFollowUp =

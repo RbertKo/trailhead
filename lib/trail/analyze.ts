@@ -68,7 +68,8 @@ export async function analyzeTurn(
         // output to the schema either way, so it would only add a way to fail.
         providerOptions: {
           openai: {
-            ...metaTextOptions({ reasoningEffort: "low" }).openai,
+            // Half the wait of "low", and it reads turns just as well.
+            ...metaTextOptions({ reasoningEffort: "minimal" }).openai,
             strictJsonSchema: false,
           },
         },

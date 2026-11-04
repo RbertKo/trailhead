@@ -548,7 +548,7 @@ describe("holes", () => {
     s.wait(4 * DAY);
     s.turn(asking("경사하강법"));
     s.turn(analysis({ moment: "other", recallVerdict: "fuzzy" }));
-    s.wait(4 * DAY);
+    s.wait(2 * 60 * 60 * 1000);
 
     const plan = s.turn(
       analysis({
@@ -682,6 +682,34 @@ describe("recall checks", () => {
     s.turn({ ...asking("강화학습"), recallVerdict: "fuzzy" });
     expect(s.node("역전파").state).toBe("seen");
     expect(s.node("역전파").lastCheckedAt).toBeNull();
+  });
+
+  it("comes before filling a hole, after days away", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(7 * DAY);
+
+    const backprop = {
+      ...asking("CNN", {
+        prerequisites: ["역전파", "합성곱"],
+        blockingPrerequisite: "합성곱",
+      }),
+    };
+    expect(s.turn(backprop)).toMatchObject({
+      kind: "recall_ask",
+      nodeId: s.node("역전파").id,
+    });
+    s.turn(analysis({ moment: "other", recallVerdict: "fuzzy" }));
+
+    // The hole waits for the next question, in the same sitting.
+    expect(
+      s.turn(
+        asking("풀링", {
+          prerequisites: ["합성곱"],
+          blockingPrerequisite: "합성곱",
+        }),
+      ),
+    ).toMatchObject({ kind: "gap", gapId: s.node("합성곱").id });
   });
 
   it("tests at most one concept in a sitting", () => {
