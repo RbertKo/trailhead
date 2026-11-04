@@ -9,9 +9,11 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import { toReplayableMessages } from "@/lib/ai/history";
 import { chatTools, type ChatUIMessage } from "@/lib/ai/tools";
 import { reportApiError } from "@/lib/api/errors";
 import {
+  errorResponse,
   invalidBody,
   parseJsonBody,
   upstreamErrorResponse,
@@ -24,13 +26,25 @@ const MAX_STEPS = 5;
 // Covers reasoning and visible output together, so it cannot be set too low.
 const MAX_OUTPUT_TOKENS = 4096;
 
+// Clients send the conversation so far. They must not be able to add system
+// instructions to it.
 const bodySchema = z.object({
-  messages: z.array(z.unknown()).min(1).max(MAX_MESSAGES),
+  messages: z
+    .array(z.looseObject({ role: z.enum(["user", "assistant"]) }))
+    .min(1),
 });
 
 export async function POST(request: Request) {
   const body = await parseJsonBody(request, bodySchema, MAX_BODY_BYTES);
   if ("response" in body) return body.response;
+
+  if (body.data.messages.length > MAX_MESSAGES) {
+    return errorResponse({
+      status: 413,
+      code: "conversation_too_long",
+      message: "This conversation is too long. Start a new one.",
+    });
+  }
 
   let messages: ChatUIMessage[];
   try {
@@ -45,7 +59,9 @@ export async function POST(request: Request) {
   try {
     const result = streamText({
       model: metaTextModel(),
-      messages: await convertToModelMessages(messages, { tools: chatTools }),
+      messages: await convertToModelMessages(toReplayableMessages(messages), {
+        tools: chatTools,
+      }),
       tools: chatTools,
       stopWhen: isStepCount(MAX_STEPS),
       maxOutputTokens: MAX_OUTPUT_TOKENS,
