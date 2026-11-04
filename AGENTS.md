@@ -43,6 +43,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 
 - **한 턴:** `app/api/turn/route.ts`. Muse Spark가 턴을 구조화 출력으로 읽고(`lib/trail/analyze.ts`), 엔진이 지도를 바꾸며 이번 턴에 할 일을 하나 정하고(`lib/trail/engine.ts`), Muse Spark가 그 지시대로 답변을 스트리밍한다(`lib/trail/prompts.ts`).
 - **상태 변경은 엔진만 한다.** 모델은 읽고 쓰기만 한다. 답변 문구에 따라 지도가 달라지면 안 되고, 새 규칙은 `lib/trail/engine.test.ts`에 테스트로 남긴다.
+- **전달된 뒤에 확정한다.** 구멍을 메운 것과 복기·이어서/복습 질문을 물어본 것은 답변이 끝까지 전달된 뒤 `completeTurn`에서 기록한다. 중단되거나 잘린 답변은 치지 않는다. 그래야 다음 말이 본 적 없는 질문의 답으로 채점되지 않는다.
 - **세션은 브라우저에 있다.** 서버에 저장하지 않고, 지도는 턴마다 브라우저가 보낸다. 그래서 `lib/trail/types.ts`의 크기 제한이 프롬프트 크기와 비용의 상한이다.
 - **상태는 스펙의 3개에 `seen`을 더한 4개다.** 3개로는 막 본 개념을 나타낼 수 없다. `fuzzy`로 두면 스펙 3.6에 따라 바로 구멍으로 잡혀 같은 설명을 반복하고, 복기 실패로 흐려지는 변화도 보이지 않는다. `solid`로 두면 봤다와 안다의 구분이 사라진다.
 
@@ -55,6 +56,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 - **SAM은 부가 기능이고 턴과 분리돼 있다.** `/api/region`으로 따로 호출하므로 느려도 답변과 입력을 막지 않고, 실패하거나 아무것도 못 찾아도 턴은 그대로다. 마스크는 `bounds`에 맞춰 늘려 그린다.
 - **응답이 비거나 JSON이 깨지면 지도 변경 없이 대화를 잇는다.** `NoObjectGeneratedError`와 `NoOutputGeneratedError` 모두 해당한다. 키·결제·호출 제한 오류는 답변도 실패하므로 그대로 오류로 보여준다.
 - **Vercel 함수 본문 제한은 4.5MB다.** 그래서 브라우저에서 이미지를 줄여 보낸다(`lib/trail/image.ts`).
+- **모델 답변의 이미지와 링크는 글자로만 보여준다.** 스크린샷 속 글자로 모델을 속이면 대화 내용이 담긴 주소를 불러오게 만들 수 있다(`components/trail/reply-text.tsx`). 프롬프트에 넣는 지도 내용은 `quoted()`와 `plainName()`을 거친다.
 - **새 `/api` 경로는 `proxy.ts`의 호출 제한을 자동으로 적용받는다.** 본문 크기 상한은 `parseJsonBody`로 경로마다 정한다. 요청 본문은 곧 과금되는 입력 토큰이다.
 
 ## 작업 전후 확인
