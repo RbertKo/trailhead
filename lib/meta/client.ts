@@ -8,13 +8,13 @@ import OpenAI from "openai";
 
 import { getMetaConfig } from "./config";
 
-/** AI SDK model for streaming text, tool loops and agents. */
+/** AI SDK model for Muse Spark: structured output and streaming text. */
 export function metaTextModel() {
   const { apiKey, baseURL, models } = getMetaConfig();
   return createOpenAI({ apiKey, baseURL }).responses(models.text);
 }
 
-/** OpenAI SDK client for what the AI SDK does not cover: Muse Image and SAM. */
+/** OpenAI SDK client for what the AI SDK does not cover: SAM. */
 export function metaApiClient() {
   const { apiKey, baseURL } = getMetaConfig();
   return new OpenAI({ apiKey, baseURL });
@@ -25,20 +25,20 @@ export function metaApiClient() {
  *
  * - `forceReasoning`: the SDK does not recognise Muse model IDs as reasoning
  *   models and would otherwise drop the reasoning settings.
- * - `store: false`: Meta's recommended stateless mode. The SDK then requests
- *   `reasoning.encrypted_content` and replays it on the next turn, so reasoning
- *   survives across turns without any server-side conversation state.
+ * - `store: false`: Meta's recommended stateless mode. Nothing is kept on Meta's
+ *   side between turns, and each turn sends the text history it needs.
+ * - `reasoningSummary: null`: the SDK otherwise asks for a detailed summary of
+ *   the reasoning, which nothing here shows.
  */
 export function metaTextOptions(
-  overrides: Pick<OpenAILanguageModelResponsesOptions, "reasoningEffort"> = {},
+  options: Pick<OpenAILanguageModelResponsesOptions, "reasoningEffort">,
 ) {
   return {
     openai: {
       forceReasoning: true,
       store: false,
-      reasoningEffort: "medium",
-      reasoningSummary: "auto",
-      ...overrides,
+      reasoningSummary: null,
+      ...options,
     } satisfies OpenAILanguageModelResponsesOptions,
   };
 }
