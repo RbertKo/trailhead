@@ -1,0 +1,534 @@
+import { describe, expect, it } from "vitest";
+
+import type { ConceptAnalysis, TurnAnalysis } from "./analysis";
+import {
+  advanceTime,
+  applyTurn,
+  completeTurn,
+  fadeStaleNodes,
+  findByLabel,
+  isRecallDue,
+  lastAnswerFor,
+  normalizeLabel,
+} from "./engine";
+import { EMPTY_TRAIL, type TrailState, type TurnPlan } from "./types";
+
+const DAY = 24 * 60 * 60 * 1000;
+const START = 1_800_000_000_000;
+
+function concept(
+  label: string,
+  overrides: Partial<ConceptAnalysis> = {},
+): ConceptAnalysis {
+  return {
+    label,
+    summary: `${label} summary`,
+    parentLabel: null,
+    childLabels: [],
+    prerequisites: [],
+    blockingPrerequisite: null,
+    ...overrides,
+  };
+}
+
+function analysis(overrides: Partial<TurnAnalysis> = {}): TurnAnalysis {
+  return {
+    moment: "question",
+    focusLabel: null,
+    concepts: [],
+    imageDescription: null,
+    keyRegion: null,
+    recallVerdict: null,
+    recallNote: null,
+    revisitChoice: null,
+    ...overrides,
+  };
+}
+
+function asking(label: string, overrides: Partial<ConceptAnalysis> = {}) {
+  return analysis({ focusLabel: label, concepts: [concept(label, overrides)] });
+}
+
+/** Drives the engine turn by turn, the way the API route does. */
+function session(initial: TrailState = EMPTY_TRAIL, startAt = START) {
+  let trail = initial;
+  let now = startAt;
+  let counter = 0;
+  const context = () => ({ now, newId: () => `id-${++counter}` });
+
+  return {
+    get trail() {
+      return trail;
+    },
+    node(label: string) {
+      const node = findByLabel(trail.nodes, label);
+      if (!node) throw new Error(`No node labelled ${label}`);
+      return node;
+    },
+    turn(
+      turnAnalysis: TurnAnalysis | null,
+      text = "a message",
+      imageId: string | null = null,
+    ): TurnPlan {
+      const result = applyTurn(trail, { text, imageId }, turnAnalysis, context());
+      trail = completeTurn(
+        result.trail,
+        result.plan,
+        "the reply",
+        context(),
+      );
+      now += 1000;
+      return result.plan;
+    },
+    /** Applies a turn without completing it, like a reply stopped midway. */
+    startTurn(turnAnalysis: TurnAnalysis, text = "a message") {
+      const result = applyTurn(
+        trail,
+        { text, imageId: null },
+        turnAnalysis,
+        context(),
+      );
+      trail = result.trail;
+      now += 1000;
+      return result;
+    },
+    wait(ms: number) {
+      trail = advanceTime(trail, ms, now);
+    },
+  };
+}
+
+describe("the demo scenario", () => {
+  it("runs from a broad wish through a hole, a recall failure and a re-teach", () => {
+    const s = session();
+
+    // 1. No curriculum, and nothing on the map yet.
+    expect(s.turn(analysis({ moment: "broad_wish" })).kind).toBe("open");
+    expect(s.trail.nodes).toEqual([]);
+
+    // 2. Free questions and a dropped image grow the map.
+    s.turn(asking("신경망"));
+    expect(s.node("신경망").state).toBe("seen");
+    s.turn(
+      analysis({
+        focusLabel: "활성화 함수",
+        concepts: [concept("활성화 함수", { parentLabel: "신경망" })],
+        imageDescription: "A diagram of a neuron",
+      }),
+      "",
+      "image-1",
+    );
+    expect(s.node("활성화 함수").parentId).toBe(s.node("신경망").id);
+    const drop = s.trail.traces.find((trace) => trace.type === "drop");
+    expect(drop?.imageId).toBe("image-1");
+    expect(drop?.content).toBe("A diagram of a neuron");
+
+    // 3. The hole appears, only that piece is filled, and the turn stays on
+    // the original question.
+    const started = s.startTurn(
+      asking("역전파", {
+        prerequisites: ["경사하강법", "연쇄 법칙"],
+        blockingPrerequisite: "경사하강법",
+      }),
+    );
+    expect(started.plan).toMatchObject({
+      kind: "gap",
+      reason: "never_seen",
+      gapId: s.node("경사하강법").id,
+      focusId: s.node("역전파").id,
+    });
+    expect(s.node("경사하강법").state).toBe("unseen");
+    expect(s.node("연쇄 법칙").state).toBe("unseen");
+
+    const finished = completeTurn(s.trail, started.plan, "gd then backprop", {
+      now: START + 10_000,
+      newId: () => "answer-1",
+    });
+    expect(findByLabel(finished.nodes, "경사하강법")?.state).toBe("seen");
+    // The other hole stays put: only what is needed right now gets filled.
+    expect(findByLabel(finished.nodes, "연쇄 법칙")?.state).toBe("unseen");
+    expect(finished.focusId).toBe(findByLabel(finished.nodes, "역전파")?.id);
+    expect(
+      lastAnswerFor(finished, findByLabel(finished.nodes, "역전파")!.id),
+    ).toBe("gd then backprop");
+  });
+
+  it("tests memory first on a related topic, demotes on failure, then returns", () => {
+    const s = session();
+    s.turn(asking("경사하강법"));
+    s.turn(asking("역전파", { prerequisites: ["경사하강법"] }));
+    expect(s.node("역전파").state).toBe("seen");
+
+    s.wait(7 * DAY);
+
+    const asked = s.turn(asking("CNN", { prerequisites: ["역전파"] }), "CNN은 어떻게 학습해?");
+    expect(asked).toEqual({ kind: "recall_ask", nodeId: s.node("역전파").id });
+    expect(s.trail.pending).toEqual({
+      kind: "recall",
+      nodeId: s.node("역전파").id,
+      originalQuestion: "CNN은 어떻게 학습해?",
+      returnToId: s.node("CNN").id,
+    });
+    // Asked, not yet graded.
+    expect(s.node("역전파").state).toBe("seen");
+    expect(s.node("역전파").lastCheckedAt).toBeNull();
+
+    const graded = s.turn(
+      analysis({
+        moment: "other",
+        recallVerdict: "fuzzy",
+        recallNote: "Remembered it goes backwards, not why.",
+      }),
+      "음... 뒤로 뭔가 보내는 거였나?",
+    );
+    expect(graded).toMatchObject({
+      kind: "recall_result",
+      verdict: "fuzzy",
+      note: "Remembered it goes backwards, not why.",
+      originalQuestion: "CNN은 어떻게 학습해?",
+      returnToId: s.node("CNN").id,
+    });
+    // Stays fuzzy after being re-taught, and the conversation returns to CNN.
+    expect(s.node("역전파").state).toBe("fuzzy");
+    expect(s.node("역전파").lastCheckedAt).not.toBeNull();
+    expect(s.trail.pending).toBeNull();
+    expect(s.trail.focusId).toBe(s.node("CNN").id);
+    expect(
+      s.trail.traces.find((trace) => trace.type === "recall_check"),
+    ).toMatchObject({ verdict: "fuzzy", content: "음... 뒤로 뭔가 보내는 거였나?" });
+  });
+
+  it("promotes to solid on a correct recall", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    expect(s.turn(asking("역전파")).kind).toBe("recall_ask");
+    s.turn(analysis({ moment: "other", recallVerdict: "solid" }));
+    expect(s.node("역전파").state).toBe("solid");
+  });
+});
+
+describe("holes", () => {
+  it("leaves a non-blocking prerequisite as a quiet hole", () => {
+    const s = session();
+    const plan = s.turn(asking("신경망", { prerequisites: ["행렬"] }));
+    expect(plan.kind).toBe("answer");
+    expect(s.node("행렬").state).toBe("unseen");
+  });
+
+  it("does not stop for a blocking prerequisite the learner has already seen", () => {
+    const s = session();
+    s.turn(asking("경사하강법"));
+    const plan = s.turn(
+      asking("역전파", {
+        prerequisites: ["경사하강법"],
+        blockingPrerequisite: "경사하강법",
+      }),
+    );
+    expect(plan.kind).toBe("answer");
+  });
+
+  it("does not flag the same hole twice once it has been filled", () => {
+    const s = session();
+    const backprop = asking("역전파", {
+      prerequisites: ["경사하강법"],
+      blockingPrerequisite: "경사하강법",
+    });
+    expect(s.turn(backprop).kind).toBe("gap");
+    expect(s.turn(backprop).kind).toBe("answer");
+  });
+
+  it("keeps the hole open when the reply is stopped before completing", () => {
+    const s = session();
+    const { plan } = s.startTurn(
+      asking("역전파", {
+        prerequisites: ["경사하강법"],
+        blockingPrerequisite: "경사하강법",
+      }),
+    );
+    expect(plan.kind).toBe("gap");
+    expect(s.node("경사하강법").state).toBe("unseen");
+  });
+
+  it("treats a fuzzy prerequisite as a hole once a re-teach has had time to settle", () => {
+    const s = session();
+    s.turn(asking("경사하강법"));
+    s.wait(4 * DAY);
+    s.turn(asking("경사하강법"));
+    s.turn(analysis({ moment: "other", recallVerdict: "fuzzy" }));
+    expect(s.node("경사하강법").state).toBe("fuzzy");
+
+    // Right after the re-teach it is not flagged again.
+    expect(s.turn(asking("역전파", { prerequisites: ["경사하강법"] })).kind).toBe(
+      "answer",
+    );
+
+    s.wait(2 * 60 * 60 * 1000);
+    const plan = s.turn(asking("CNN", { prerequisites: ["경사하강법"] }));
+    expect(plan).toMatchObject({ kind: "gap", reason: "fuzzy" });
+    // Re-taught through the hole: told again, still untested.
+    expect(s.node("경사하강법").state).toBe("seen");
+  });
+
+  it("ignores a concept listed as its own prerequisite", () => {
+    const s = session();
+    const plan = s.turn(
+      asking("역전파", {
+        prerequisites: ["역전파"],
+        blockingPrerequisite: "역전파",
+      }),
+    );
+    expect(plan.kind).toBe("answer");
+    expect(s.node("역전파").prerequisiteIds).toEqual([]);
+  });
+
+  it("fills a hole when the learner asks about it directly", () => {
+    const s = session();
+    s.turn(asking("신경망", { prerequisites: ["행렬"] }));
+    expect(s.node("행렬").state).toBe("unseen");
+    s.turn(asking("행렬"));
+    expect(s.node("행렬").state).toBe("seen");
+  });
+});
+
+describe("recall checks", () => {
+  it("is not due right after being seen", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    expect(isRecallDue(s.node("역전파"), START + DAY)).toBe(false);
+    expect(isRecallDue(s.node("역전파"), START + 4 * DAY)).toBe(true);
+  });
+
+  it("never tests a hole", () => {
+    const s = session();
+    s.turn(asking("신경망", { prerequisites: ["행렬"] }));
+    expect(isRecallDue(s.node("행렬"), START + 365 * DAY)).toBe(false);
+  });
+
+  it("does not test a concept just created in this turn", () => {
+    const s = session();
+    expect(s.turn(asking("역전파")).kind).toBe("answer");
+  });
+
+  it("drops an ignored check, without repeating it or leaving it pending", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    expect(s.turn(asking("역전파")).kind).toBe("recall_ask");
+
+    const plan = s.turn({
+      ...asking("강화학습"),
+      recallVerdict: "not_answered",
+    });
+    expect(plan.kind).toBe("answer");
+    expect(s.trail.pending).toBeNull();
+    expect(s.node("역전파").state).toBe("seen");
+    expect(s.node("역전파").lastCheckedAt).toBeNull();
+    expect(s.trail.focusId).toBe(s.node("강화학습").id);
+  });
+
+  it("tests at most one concept in a sitting", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    s.wait(4 * DAY);
+
+    expect(s.turn(asking("A")).kind).toBe("recall_ask");
+    s.turn(analysis({ moment: "other", recallVerdict: "solid" }));
+    expect(s.turn(asking("B")).kind).toBe("answer");
+  });
+
+  it("tests the oldest due concept when the learner wraps up", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    s.wait(4 * DAY);
+    expect(s.turn(analysis({ moment: "wrapping_up" }), "이제 뭐 볼까")).toEqual({
+      kind: "recall_ask",
+      nodeId: s.node("A").id,
+    });
+  });
+
+  it("offers one hole rather than a list when wrapping up with nothing due", () => {
+    const s = session();
+    s.turn(asking("신경망", { prerequisites: ["행렬", "미분"] }));
+    expect(s.turn(analysis({ moment: "wrapping_up" }))).toEqual({
+      kind: "wander",
+      holeId: s.node("행렬").id,
+    });
+  });
+});
+
+describe("coming back", () => {
+  it("offers continue or review, then acts on the choice", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.turn(asking("강화학습"));
+
+    const offer = s.turn(
+      { ...asking("역전파"), moment: "coming_back" },
+      "역전파 다시 알려줘",
+    );
+    expect(offer).toEqual({ kind: "revisit_offer", nodeId: s.node("역전파").id });
+
+    const resume = s.turn(analysis({ moment: "other", revisitChoice: "review" }));
+    expect(resume).toMatchObject({
+      kind: "revisit_resume",
+      choice: "review",
+      originalQuestion: "역전파 다시 알려줘",
+    });
+    expect(s.trail.pending).toBeNull();
+  });
+
+  it("does not offer it for a follow-up on the topic just discussed", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    const plan = s.turn({ ...asking("역전파"), moment: "coming_back" });
+    expect(plan.kind).toBe("answer");
+  });
+
+  it("moves on when the learner changes the subject instead of choosing", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.turn(asking("강화학습"));
+    s.turn({ ...asking("역전파"), moment: "coming_back" });
+
+    const plan = s.turn({ ...asking("CNN"), revisitChoice: "other" });
+    expect(plan.kind).toBe("answer");
+    expect(s.trail.pending).toBeNull();
+  });
+});
+
+describe("placing concepts", () => {
+  it("reuses a node when the label differs only by spacing or case", () => {
+    const s = session();
+    s.turn(asking("Gradient Descent"));
+    s.turn(asking("gradientdescent"));
+    expect(s.trail.nodes).toHaveLength(1);
+    expect(normalizeLabel("Gradient  Descent")).toBe("gradientdescent");
+  });
+
+  it("links a parent that arrives after its child, without a cycle", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.turn(asking("신경망", { childLabels: ["역전파"] }));
+    expect(s.node("역전파").parentId).toBe(s.node("신경망").id);
+
+    s.turn(asking("역전파", { childLabels: ["신경망"] }));
+    expect(s.node("신경망").parentId).toBeNull();
+  });
+
+  it("links concepts within one response in any order", () => {
+    const s = session();
+    s.turn(
+      analysis({
+        focusLabel: "역전파",
+        concepts: [
+          concept("역전파", { parentLabel: "신경망" }),
+          concept("신경망"),
+        ],
+      }),
+    );
+    expect(s.node("역전파").parentId).toBe(s.node("신경망").id);
+  });
+
+  it("ignores a parent that is not on the map", () => {
+    const s = session();
+    s.turn(asking("역전파", { parentLabel: "존재하지 않는 개념" }));
+    expect(s.node("역전파").parentId).toBeNull();
+    expect(s.trail.nodes).toHaveLength(1);
+  });
+
+  it("keeps at most three prerequisites from one response", () => {
+    const s = session();
+    s.turn(asking("A", { prerequisites: ["B", "C", "D", "E"] }));
+    expect(s.node("A").prerequisiteIds).toHaveLength(3);
+    expect(s.trail.nodes).toHaveLength(4);
+  });
+
+  it("clamps oversized output so the next request still validates", () => {
+    const s = session();
+    const huge = "x".repeat(5_000);
+    s.turn(
+      analysis({
+        focusLabel: huge,
+        concepts: [concept(huge, { summary: huge })],
+      }),
+      huge,
+    );
+    const [node] = s.trail.nodes;
+    expect(node.label.length).toBeLessThanOrEqual(120);
+    expect(node.summary.length).toBeLessThanOrEqual(1_000);
+    expect(s.trail.traces[0].content.length).toBeLessThanOrEqual(2_000);
+  });
+
+  it("falls back to the first concept when the focus label is unknown", () => {
+    const s = session();
+    const plan = s.turn(
+      analysis({ focusLabel: "엉뚱한 이름", concepts: [concept("역전파")] }),
+    );
+    expect(plan).toEqual({ kind: "answer", focusId: s.node("역전파").id });
+  });
+
+  it("does not attach small talk to the concept in focus", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    const answers = () =>
+      s.trail.traces.filter((trace) => trace.type === "answer").length;
+    const before = answers();
+
+    const plan = s.turn(analysis({ moment: "other" }), "고마워");
+    expect(plan).toEqual({ kind: "answer", focusId: null });
+    expect(answers()).toBe(before);
+    expect(s.trail.focusId).toBe(s.node("역전파").id);
+  });
+});
+
+describe("when the model's reading fails", () => {
+  it("keeps the conversation going without touching the map", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    const nodes = s.trail.nodes;
+
+    const plan = s.turn(null, "그래서 왜 그래?");
+    expect(plan).toEqual({ kind: "answer", focusId: null });
+    expect(s.trail.nodes).toEqual(nodes);
+    expect(s.trail.traces.at(-1)?.content).not.toBe("");
+  });
+});
+
+describe("the passing of time", () => {
+  it("fades seen and solid concepts that have gone untouched for a month", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    s.turn(asking("C", { prerequisites: ["hole"] }));
+    s.wait(29 * DAY);
+    expect(s.node("A").state).toBe("seen");
+
+    s.wait(2 * DAY);
+    expect(s.node("A").state).toBe("fuzzy");
+    expect(s.node("B").state).toBe("fuzzy");
+    expect(s.node("hole").state).toBe("unseen");
+  });
+
+  it("fades on the server too, in case the browser state is stale", () => {
+    const s = session();
+    s.turn(asking("A"));
+    const faded = fadeStaleNodes(s.trail, START + 40 * DAY);
+    expect(findByLabel(faded.nodes, "A")?.state).toBe("fuzzy");
+  });
+
+  it("moves every timestamp and keeps null ones null", () => {
+    const s = session();
+    s.turn(asking("A"));
+    const { lastTouchedAt, firstSeenAt } = s.node("A");
+    const createdAt = s.trail.traces[0].createdAt;
+
+    s.wait(DAY);
+    expect(s.node("A").lastTouchedAt).toBe(lastTouchedAt - DAY);
+    expect(s.node("A").firstSeenAt).toBe(firstSeenAt - DAY);
+    expect(s.node("A").lastCheckedAt).toBeNull();
+    expect(s.trail.traces[0].createdAt).toBe(createdAt - DAY);
+  });
+});
