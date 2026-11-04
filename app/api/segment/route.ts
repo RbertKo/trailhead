@@ -22,7 +22,9 @@ export async function POST(request: Request) {
   if ("response" in body) return body.response;
 
   try {
-    return Response.json({ objects: await segmentImage(body.data) });
+    return Response.json({
+      objects: await segmentImage(body.data, request.signal),
+    });
   } catch (error) {
     return upstreamErrorResponse(error);
   }

@@ -12,7 +12,7 @@ export async function POST(request: Request) {
   if ("response" in body) return body.response;
 
   try {
-    return Response.json(await generateImage(body.data.prompt));
+    return Response.json(await generateImage(body.data.prompt, request.signal));
   } catch (error) {
     return upstreamErrorResponse(error);
   }
