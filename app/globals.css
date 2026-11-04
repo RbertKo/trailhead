@@ -131,6 +131,11 @@
   border: 2px dashed var(--state-hole);
   color: var(--state-hole);
 }
+/* Being explained right now: on its way in, not a hole. */
+.trail-dot[data-state="unseen"][data-reading] {
+  border-color: var(--state-solid);
+  color: var(--state-solid);
+}
 .trail-dot--small {
   width: 1rem;
   height: 1rem;

@@ -43,7 +43,12 @@ export const MapPane = memo(function MapPane({
 }) {
   const count = (state: NodeState) =>
     trail.nodes.filter((node) => node.state === state).length;
-  const walked = trail.nodes.length - count("unseen");
+  // The concept being explained right now isn't a hole, even before the reply ends.
+  const holes = trail.nodes.filter(
+    (node) =>
+      node.state === "unseen" && !(isBusy && node.id === trail.focusId),
+  ).length;
+  const walked = trail.nodes.length - holes;
   const selected = findById(trail.nodes, selectedId);
 
   return (
@@ -57,7 +62,7 @@ export const MapPane = memo(function MapPane({
           </h2>
           {trail.nodes.length > 0 && (
             <p className="text-xs text-muted-foreground tabular-nums">
-              {copy.stats(walked, count("solid"), count("unseen"))}
+              {copy.stats(walked, count("solid"), holes)}
             </p>
           )}
         </div>
@@ -86,6 +91,7 @@ export const MapPane = memo(function MapPane({
             clock={clock}
             images={images}
             selectedId={selectedId}
+            isBusy={isBusy}
             copy={copy}
             onSelect={onSelect}
           />

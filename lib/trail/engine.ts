@@ -202,6 +202,12 @@ class TrailDraft {
     return node;
   }
 
+  /** Brought up, which isn't the same as having been told about it. */
+  touch(node: KnowledgeNode) {
+    node.lastTouchedAt = this.context.now;
+  }
+
+  /** Told about it: only once a reply explaining it has been delivered. */
   meet(node: KnowledgeNode) {
     if (node.state === "unseen") {
       node.state = "seen";
@@ -235,7 +241,7 @@ function placeConcepts(draft: TrailDraft, concepts: ConceptAnalysis[]) {
   for (const concept of concepts.slice(0, MAX_CONCEPTS_PER_TURN)) {
     const node = draft.ensureNode(concept.label);
     if (!node || placed.some((entry) => entry.node.id === node.id)) continue;
-    draft.meet(node);
+    draft.touch(node);
     const summary = concept.summary.trim().slice(0, MAX_SUMMARY);
     if (summary) node.summary = summary;
     placed.push({ concept, node });
@@ -292,6 +298,7 @@ function pickHole(
   focus: KnowledgeNode,
   analysis: ConceptAnalysis | undefined,
   nodes: KnowledgeNode[],
+  askedNow: KnowledgeNode[],
   before: TrailState,
   now: number,
 ): KnowledgeNode | undefined {
@@ -305,10 +312,14 @@ function pickHole(
   const blocking = analysis?.blockingPrerequisite
     ? findByLabel(nodes, analysis.blockingPrerequisite)
     : undefined;
+  // A concept they are asking about right now gets explained anyway.
+  const isAskedNow = (node: KnowledgeNode) =>
+    askedNow.some((asked) => asked.id === node.id);
   if (
     blocking &&
     blocking.id !== focus.id &&
-    (blocking.state === "unseen" || isFuzzyHole(blocking))
+    ((blocking.state === "unseen" && !isAskedNow(blocking)) ||
+      isFuzzyHole(blocking))
   ) {
     return blocking;
   }
@@ -428,25 +439,13 @@ export function applyTurn(
     };
   };
 
-  // Asking about a concept isn't being told about it. When a turn puts the answer
-  // off, whatever it newly brought up stays unseen until a reply explains it.
-  const postponeExplanations = () => {
-    for (const node of draft.nodes) {
-      const previous = findById(before.nodes, node.id);
-      const wasUnseen = !previous || previous.state === "unseen";
-      if (node.state === "seen" && wasUnseen) node.state = "unseen";
-    }
-  };
-
-  const askRecall = (node: KnowledgeNode, returnToId: string | null) => {
-    postponeExplanations();
-    return finish({
+  const askRecall = (node: KnowledgeNode, returnToId: string | null) =>
+    finish({
       kind: "recall_ask",
       nodeId: node.id,
       originalQuestion: question,
       returnToId,
     });
-  };
 
   // A reply to what the last turn asked. Anything else just moves on: an ignored
   // recall check is dropped and never repeated. A thrown image is for the map, so
@@ -514,9 +513,10 @@ export function applyTurn(
   const focus =
     (analysis.focusLabel && findByLabel(draft.nodes, analysis.focusLabel)) ||
     placed[0]?.node;
-  if (focus) draft.meet(focus);
-
-  if (focus) questionsSinceOffer += 1;
+  if (focus) {
+    draft.touch(focus);
+    questionsSinceOffer += 1;
+  }
 
   if (message.imageId || focus) {
     draft.addTrace({
@@ -563,15 +563,20 @@ export function applyTurn(
     (concept) => normalizeLabel(concept.label) === normalizeLabel(focus.label),
   );
   // Offered next to an answer, once enough questions have made a trail to go on.
-  const offerNextSteps = (excludeIds: string[]) => {
+  const askedNow = [focus, ...placed.map(({ node }) => node)];
+  const offerNextSteps = (exclude: KnowledgeNode[]) => {
     if (questionsSinceOffer < QUESTIONS_BEFORE_OFFER) return;
-    nextSteps = pickNextSteps(analysis.nextSteps, draft.nodes, excludeIds);
+    nextSteps = pickNextSteps(
+      analysis.nextSteps,
+      draft.nodes,
+      exclude.map(({ id }) => id),
+    );
     if (nextSteps.length > 0) questionsSinceOffer = 0;
   };
 
-  const hole = pickHole(focus, focusAnalysis, draft.nodes, before, now);
+  const hole = pickHole(focus, focusAnalysis, draft.nodes, askedNow, before, now);
   if (hole) {
-    offerNextSteps([focus.id, hole.id]);
+    offerNextSteps([...askedNow, hole]);
     return finish({
       kind: "gap",
       focusId: focus.id,
@@ -599,7 +604,6 @@ export function applyTurn(
     previous.state !== "unseen" &&
     !isFollowUp
   ) {
-    postponeExplanations();
     return finish({
       kind: "revisit_offer",
       nodeId: focus.id,
@@ -607,7 +611,7 @@ export function applyTurn(
     });
   }
 
-  offerNextSteps([focus.id]);
+  offerNextSteps(askedNow);
   return finish({ kind: "answer", focusId: focus.id });
 }
 
@@ -630,6 +634,16 @@ export function completeTurn(
       });
     }
   };
+  // What the question in this turn was about has now been explained.
+  const meetWhatWasAsked = () => {
+    const asked = trail.traces.findLast(
+      (trace) => trace.type === "question" || trace.type === "drop",
+    );
+    for (const id of asked?.nodeIds ?? []) {
+      const node = findById(draft.nodes, id);
+      if (node) draft.meet(node);
+    }
+  };
 
   switch (plan.kind) {
     case "gap": {
@@ -639,11 +653,15 @@ export function completeTurn(
         if (hole.state === "fuzzy") hole.state = "seen";
         draft.meet(hole);
       }
+      meetWhatWasAsked();
       addAnswer([plan.gapId, plan.focusId]);
       break;
     }
     case "answer":
-      if (plan.focusId) addAnswer([plan.focusId]);
+      if (plan.focusId) {
+        meetWhatWasAsked();
+        addAnswer([plan.focusId]);
+      }
       break;
     case "recall_result": {
       // The question the check interrupted has now been answered.
@@ -652,12 +670,13 @@ export function completeTurn(
 
       // Only what this reply explained counts as explained. A passed check is
       // acknowledged, not re-taught, so the concept keeps its earlier explanation
-      // for later re-teaching and grading. A failed check stays fuzzy even though
-      // it was just re-taught: being told again is not remembering.
+      // for later re-teaching and grading, even if the question was about it too.
+      // A failed check stays fuzzy even though it was just re-taught: being told
+      // again is not remembering.
       const explained = [
         ...(plan.verdict === "fuzzy" ? [plan.nodeId] : []),
         ...(plan.returnToId ? [plan.returnToId] : []),
-      ];
+      ].filter((id) => plan.verdict === "fuzzy" || id !== plan.nodeId);
       if (explained.length > 0) addAnswer(explained);
       break;
     }

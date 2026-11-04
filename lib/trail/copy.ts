@@ -26,6 +26,7 @@ export interface Copy {
   stateHelp: Record<NodeState, string>;
   due: string;
   youAreHere: string;
+  beingRead: string;
 
   timeLabel: string;
   plusDays: (days: number) => string;
@@ -94,10 +95,11 @@ export const COPY: Record<Locale, Copy> = {
       solid: "복기에서 제대로 답했어.",
       seen: "봤지만 기억하는지는 아직 몰라.",
       fuzzy: "복기에서 막혔거나, 오래돼서 흐려졌어.",
-      unseen: "다른 개념에 필요한데 아직 안 봤어.",
+      unseen: "아직 설명을 못 본 개념이야.",
     },
     due: "복기할 때가 됐어",
     youAreHere: "지금 여기",
+    beingRead: "보는 중",
 
     timeLabel: "시간 흐름 시뮬레이션",
     plusDays: (days) => `+${days}일`,
@@ -171,10 +173,11 @@ export const COPY: Record<Locale, Copy> = {
       solid: "You answered a recall check correctly.",
       seen: "You've seen it. Whether you remember it is still unknown.",
       fuzzy: "A recall check stumped you, or it's been too long.",
-      unseen: "Another concept needs this, and you haven't seen it yet.",
+      unseen: "You haven't had this one explained yet.",
     },
     due: "Due for a recall check",
     youAreHere: "You are here",
+    beingRead: "Reading",
 
     timeLabel: "Simulate time passing",
     plusDays: (days) => `+${days}d`,

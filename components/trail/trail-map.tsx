@@ -35,6 +35,7 @@ export function TrailMap({
   clock,
   images,
   selectedId,
+  isBusy,
   copy,
   onSelect,
 }: {
@@ -42,6 +43,7 @@ export function TrailMap({
   clock: number;
   images: Record<string, DroppedImage>;
   selectedId: string | null;
+  isBusy: boolean;
   copy: Copy;
   onSelect: (id: string | null) => void;
 }) {
@@ -175,8 +177,13 @@ export function TrailMap({
           {trail.nodes.map((node) => {
             const position = positions.get(node.id);
             if (!position) return null;
-            const Icon = STATE_ICONS[node.state];
             const isFocus = trail.focusId === node.id;
+            // It counts as seen once the reply ends. Until then it's no hole either.
+            const isBeingRead = isBusy && isFocus && node.state === "unseen";
+            const Icon = STATE_ICONS[isBeingRead ? "seen" : node.state];
+            const stateLabel = isBeingRead
+              ? copy.beingRead
+              : copy.states[node.state];
             const isDue = isRecallDue(node, clock);
             const thumbnail = images[drops.get(node.id) ?? ""]?.thumbnail;
 
@@ -186,7 +193,7 @@ export function TrailMap({
                 ref={isFocus ? focusRef : undefined}
                 type="button"
                 aria-pressed={selectedId === node.id}
-                aria-label={`${node.label}, ${copy.states[node.state]}`}
+                aria-label={`${node.label}, ${stateLabel}`}
                 title={copy.stateHelp[node.state]}
                 className="absolute flex w-32 -translate-x-1/2 flex-col items-center gap-1.5 rounded-xl p-1 outline-offset-2 animate-in fade-in zoom-in-75 duration-500 motion-reduce:animate-none"
                 style={{ left: position.x, top: position.y - NODE_RADIUS - 4 }}
@@ -203,7 +210,12 @@ export function TrailMap({
                     </>
                   )}
                   {/* The key restarts the animation, so a change of state is noticed. */}
-                  <span key={node.state} className="trail-dot" data-state={node.state}>
+                  <span
+                    key={node.state}
+                    className="trail-dot"
+                    data-state={node.state}
+                    data-reading={isBeingRead || undefined}
+                  >
                     <Icon className="size-5" aria-hidden />
                   </span>
                   {isDue && (
@@ -231,14 +243,16 @@ export function TrailMap({
                 <span
                   className={cn(
                     "-mt-1 rounded bg-map/85 px-1 text-[11px] leading-tight",
-                    node.state === "unseen"
-                      ? "text-state-hole"
-                      : node.state === "fuzzy"
-                        ? "text-state-fuzzy-ink"
-                        : "text-muted-foreground",
+                    isBeingRead
+                      ? "text-muted-foreground"
+                      : node.state === "unseen"
+                        ? "text-state-hole"
+                        : node.state === "fuzzy"
+                          ? "text-state-fuzzy-ink"
+                          : "text-muted-foreground",
                   )}
                 >
-                  {copy.states[node.state]}
+                  {stateLabel}
                 </span>
               </button>
             );

@@ -238,6 +238,16 @@ describe("what a recall result records as explained", () => {
     expect(lastAnswerFor(s.trail, s.node("CNN").id)).toBe("backprop again, then cnn");
   });
 
+  it("keeps the explanation when the question was about the recalled concept", () => {
+    const s = session();
+    s.turn(asking("역전파"), "역전파 알려줘", null, "backprop explanation");
+    s.wait(4 * DAY);
+    expect(s.turn(asking("역전파"), "역전파 또 뭐였지?").kind).toBe("recall_ask");
+
+    s.turn(gradedAs("solid"), "오차를 거꾸로 보내", null, "잘 기억하네");
+    expect(lastAnswerFor(s.trail, s.node("역전파").id)).toBe("backprop explanation");
+  });
+
   it("doesn't replace an explanation with praise after wrapping up", () => {
     const s = session();
     s.turn(asking("A"), "A?", null, "the explanation of A");
@@ -246,6 +256,69 @@ describe("what a recall result records as explained", () => {
     s.turn(gradedAs("solid"), "그건 이거야", null, "잘 기억하네");
 
     expect(lastAnswerFor(s.trail, s.node("A").id)).toBe("the explanation of A");
+  });
+});
+
+describe("nothing counts as seen until the reply has been delivered", () => {
+  it("stays unseen while the reply is on its way, then becomes seen", () => {
+    const s = session();
+    const { plan, trail } = s.startTurn(asking("역전파"));
+    expect(s.node("역전파").state).toBe("unseen");
+    expect(trail.focusId).toBe(s.node("역전파").id);
+
+    const delivered = completeTurn(trail, plan, "explained", {
+      now: START,
+      newId: () => "answer-1",
+    });
+    expect(findByLabel(delivered.nodes, "역전파")?.state).toBe("seen");
+  });
+
+  it("keeps a hole open when a reply about it is stopped", () => {
+    const s = session();
+    s.turn(asking("신경망", { prerequisites: ["행렬"] }));
+    expect(s.node("행렬").state).toBe("unseen");
+
+    s.startTurn(asking("행렬"));
+    expect(s.node("행렬").state).toBe("unseen");
+
+    // So what needs it still stops for it, and it can't be tested later.
+    const plan = s.turn(
+      asking("선형 변환", { prerequisites: ["행렬"], blockingPrerequisite: "행렬" }),
+    );
+    expect(plan).toMatchObject({ kind: "gap", gapId: s.node("행렬").id });
+  });
+
+  it("marks every concept the question was about, not only the main one", () => {
+    const s = session();
+    s.turn(
+      analysis({
+        focusLabel: "역전파",
+        concepts: [concept("역전파"), concept("경사하강법")],
+      }),
+    );
+    expect(s.node("역전파").state).toBe("seen");
+    expect(s.node("경사하강법").state).toBe("seen");
+  });
+
+  it("doesn't mark anything for small talk", () => {
+    const s = session();
+    s.turn(asking("신경망", { prerequisites: ["행렬"] }));
+    s.turn(analysis({ moment: "other" }), "고마워");
+    expect(s.node("행렬").state).toBe("unseen");
+  });
+
+  it("doesn't suggest what the reply is explaining right now", () => {
+    const s = session();
+    s.turn(asking("A"));
+    s.turn(asking("B"));
+    const { callout } = s.startTurn({
+      ...analysis({
+        focusLabel: "C",
+        concepts: [concept("C"), concept("D")],
+      }),
+      nextSteps: ["D", "C", "E"],
+    });
+    expect(callout.nextSteps).toEqual(["E"]);
   });
 });
 
