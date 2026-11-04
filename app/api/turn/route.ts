@@ -4,6 +4,7 @@ import {
   createUIMessageStreamResponse,
   streamText,
   toUIMessageStream,
+  type FinishReason,
 } from "ai";
 import { z } from "zod";
 
@@ -25,7 +26,14 @@ import { droppedImageSchema, trailStateSchema } from "@/lib/trail/types";
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 // Reasoning tokens count toward this limit too.
 const MAX_REPLY_TOKENS = 4096;
-const CUT_OFF = ["error", "length", "content-filter"];
+// The hole stays open after these. An unknown reason counts as delivered, because
+// wrongly filling a hole costs less than a hole that can never be filled.
+const CUT_OFF: FinishReason[] = [
+  "error",
+  "length",
+  "content-filter",
+  "interrupted",
+];
 
 const bodySchema = z.object({
   history: z

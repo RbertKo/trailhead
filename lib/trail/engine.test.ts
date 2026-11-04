@@ -271,6 +271,50 @@ describe("holes", () => {
     expect(s.node("경사하강법").state).toBe("seen");
   });
 
+  it("still treats a fuzzy prerequisite as a hole when it is mentioned this turn", () => {
+    const s = session();
+    s.turn(asking("경사하강법"));
+    s.wait(4 * DAY);
+    s.turn(asking("경사하강법"));
+    s.turn(analysis({ moment: "other", recallVerdict: "fuzzy" }));
+    s.wait(4 * DAY);
+
+    const plan = s.turn(
+      analysis({
+        focusLabel: "역전파",
+        concepts: [
+          concept("역전파", {
+            prerequisites: ["경사하강법"],
+            blockingPrerequisite: "경사하강법",
+          }),
+          concept("경사하강법"),
+        ],
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "gap", reason: "fuzzy" });
+  });
+
+  it("does not stop for a hole the learner is asking about right now", () => {
+    const s = session();
+    s.turn(asking("신경망", { prerequisites: ["경사하강법"] }));
+    expect(s.node("경사하강법").state).toBe("unseen");
+
+    const plan = s.turn(
+      analysis({
+        focusLabel: "역전파",
+        concepts: [
+          concept("역전파", {
+            prerequisites: ["경사하강법"],
+            blockingPrerequisite: "경사하강법",
+          }),
+          concept("경사하강법"),
+        ],
+      }),
+    );
+    expect(plan.kind).toBe("answer");
+    expect(s.node("경사하강법").state).toBe("seen");
+  });
+
   it("ignores a concept listed as its own prerequisite", () => {
     const s = session();
     const plan = s.turn(
@@ -425,6 +469,14 @@ describe("coming back", () => {
     s.turn(asking("역전파"));
     const plan = s.turn({ ...asking("역전파"), moment: "coming_back" });
     expect(plan.kind).toBe("answer");
+  });
+
+  it("offers it for a real return, even with nothing asked in between", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(1 * DAY);
+    const plan = s.turn({ ...asking("역전파"), moment: "coming_back" });
+    expect(plan).toEqual({ kind: "revisit_offer", nodeId: s.node("역전파").id });
   });
 
   it("moves on when the learner changes the subject instead of choosing", () => {
@@ -624,6 +676,22 @@ describe("when the model's reading fails", () => {
     expect(plan).toEqual({ kind: "answer", focusId: null });
     expect(s.trail.nodes).toEqual(nodes);
     expect(s.trail.traces.at(-1)?.content).not.toBe("");
+  });
+});
+
+describe("when the reading fails while a recall check is waiting", () => {
+  it("keeps the check, so the next message can still answer it", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    expect(s.turn(asking("역전파")).kind).toBe("recall_ask");
+
+    expect(s.turn(null, "오차를 거꾸로 보내는 거").kind).toBe("answer");
+    expect(s.trail.pending?.kind).toBe("recall");
+
+    const graded = s.turn(analysis({ moment: "other", recallVerdict: "solid" }));
+    expect(graded.kind).toBe("recall_result");
+    expect(s.node("역전파").state).toBe("solid");
   });
 });
 

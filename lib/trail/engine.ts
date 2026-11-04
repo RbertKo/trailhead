@@ -29,6 +29,8 @@ const FADE_AFTER = 30 * DAY;
 const GAP_COOLDOWN = 1 * HOUR;
 /** At most one recall check per sitting: a learner shouldn't feel interrogated. */
 const RECALL_COOLDOWN = 10 * 60 * 1000;
+/** Asking again within this long continues the talk. After it, it's coming back. */
+const FOLLOW_UP_WINDOW = 1 * HOUR;
 
 const MAX_PREREQUISITES = 3;
 const MAX_ANSWER_EXCERPT = 800;
@@ -105,12 +107,6 @@ export function isRecallDue(node: KnowledgeNode, now: number): boolean {
   return now - lastContact >= RECALL_DUE_AFTER[node.state];
 }
 
-function isHole(node: KnowledgeNode, now: number): boolean {
-  return (
-    node.state === "unseen" ||
-    (node.state === "fuzzy" && now - node.lastTouchedAt >= GAP_COOLDOWN)
-  );
-}
 
 /** The latest explanation the learner got for a concept, to re-teach from. */
 export function lastAnswerFor(
@@ -281,17 +277,29 @@ function pickHole(
   focus: KnowledgeNode,
   analysis: ConceptAnalysis | undefined,
   nodes: KnowledgeNode[],
+  before: TrailState,
   now: number,
 ): KnowledgeNode | undefined {
+  // Fuzziness settles by when it was last touched before this turn: being
+  // mentioned just now doesn't mean it was just re-taught.
+  const isFuzzyHole = (node: KnowledgeNode) => {
+    const lastTouchedAt = findById(before.nodes, node.id)?.lastTouchedAt ?? now;
+    return node.state === "fuzzy" && now - lastTouchedAt >= GAP_COOLDOWN;
+  };
+
   const blocking = analysis?.blockingPrerequisite
     ? findByLabel(nodes, analysis.blockingPrerequisite)
     : undefined;
-  if (blocking && blocking.id !== focus.id && isHole(blocking, now)) {
+  if (
+    blocking &&
+    blocking.id !== focus.id &&
+    (blocking.state === "unseen" || isFuzzyHole(blocking))
+  ) {
     return blocking;
   }
   return focus.prerequisiteIds
     .flatMap((id) => findById(nodes, id) ?? [])
-    .find((prerequisite) => prerequisite.state === "fuzzy" && isHole(prerequisite, now));
+    .find(isFuzzyHole);
 }
 
 /** Concepts worth testing when the conversation is on `focus`, closest first. */
@@ -451,7 +459,9 @@ export function applyTurn(
       nodeIds: [],
       imageId: message.imageId,
     });
-    return finish({ kind: "answer", focusId: null }, null);
+    // The reading failed, not the learner. Whatever was waiting can still be
+    // answered on the next turn.
+    return finish({ kind: "answer", focusId: null }, pending);
   }
 
   const previousTrace = before.traces.findLast(
@@ -498,7 +508,7 @@ export function applyTurn(
   const focusAnalysis = analysis.concepts.find(
     (concept) => normalizeLabel(concept.label) === normalizeLabel(focus.label),
   );
-  const hole = pickHole(focus, focusAnalysis, draft.nodes, now);
+  const hole = pickHole(focus, focusAnalysis, draft.nodes, before, now);
   if (hole) {
     return finish(
       {
@@ -515,7 +525,10 @@ export function applyTurn(
   if (recallNode) return askRecall(recallNode, focus.id);
 
   const previous = findById(before.nodes, focus.id);
-  const isFollowUp = previousTrace?.nodeIds.includes(focus.id) ?? false;
+  const isFollowUp =
+    previousTrace !== undefined &&
+    previousTrace.nodeIds.includes(focus.id) &&
+    now - previousTrace.createdAt < FOLLOW_UP_WINDOW;
   if (
     analysis.moment === "coming_back" &&
     previous &&

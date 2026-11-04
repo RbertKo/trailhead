@@ -75,7 +75,8 @@ async function checkReplyStream(): Promise<string> {
   if (streamError) throw streamError;
   const text = await result.text;
   if (!text.trim()) throw new Error("The reply was empty");
-  return `${chunks} chunks: ${text.trim().slice(0, 80)}…`;
+  const finishReason = await result.finishReason;
+  return `${chunks} chunks, finish: ${finishReason}: ${text.trim().slice(0, 80)}…`;
 }
 
 let dropped: { id: string; url: string } | undefined;

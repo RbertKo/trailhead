@@ -60,9 +60,13 @@ export function NodeCard({
         </button>
       </div>
 
-      <p className="leading-relaxed text-pretty">
-        {node.summary || copy.noSummary}
-      </p>
+      {/* A filled hole has no summary until the model places it itself. Its
+          explanation is under the traces below. */}
+      {(node.summary || node.state === "unseen") && (
+        <p className="leading-relaxed text-pretty">
+          {node.summary || copy.noSummary}
+        </p>
+      )}
 
       {(parent || prerequisites.length > 0) && (
         <dl className="flex flex-col gap-1.5 text-xs">

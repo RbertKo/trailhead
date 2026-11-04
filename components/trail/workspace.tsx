@@ -129,11 +129,9 @@ export function Workspace() {
 
   function send(text: string, image: DroppedImage | null) {
     const trimmed = text.trim();
-    if (isBusy || (!trimmed && !image)) return;
+    if (latestRef.current.isBusy || (!trimmed && !image)) return;
 
     setNotice(null);
-    setInput("");
-    setAttached(null);
     sentImageRef.current = image;
 
     const options = { body: { trail: trailRef.current, locale } };
@@ -171,7 +169,16 @@ export function Workspace() {
     }
   }
 
+  function submitComposer() {
+    if (isBusy) return;
+    send(input, attached);
+    setInput("");
+    setAttached(null);
+  }
+
   const onPaste = useEffectEvent((event: ClipboardEvent) => {
+    // Spreadsheets and documents copy text along with a picture of it. Text wins.
+    if (event.clipboardData?.getData("text/plain")) return;
     const image = [...(event.clipboardData?.files ?? [])].find((file) =>
       file.type.startsWith("image/"),
     );
@@ -259,7 +266,7 @@ export function Workspace() {
           isBusy={isBusy}
           copy={copy}
           onChange={setInput}
-          onSubmit={() => send(input, attached)}
+          onSubmit={submitComposer}
           onStop={() => void stop()}
           onFile={(file) => void throwFile(file)}
           onRemoveImage={() => setAttached(null)}
