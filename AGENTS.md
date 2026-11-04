@@ -10,12 +10,26 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # 프로젝트 규칙
 
-Meta Global AI Developer Hackathon 제출 프로젝트다. 주제는 아직 정하지 않았고, 지금은 주제와 무관한 기반만 있다.
+Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD 당사자를 위한 학습 도구로, 커리큘럼을 미리 주지 않는다. 호기심을 따라 질문하고 자료를 던지면 흔적이 사후에 지식 지도가 되고, 실제로 기억하는지 확인하며, 빠진 선행 지식은 그 조각만 메운다.
 
 - **통합 브랜치:** `main`. 분기 기준이자 PR base다.
 - **제출 마감:** 2026-11-04 21:00 ET = 2026-11-05 11:00 KST. 늦은 제출은 받지 않는다.
 - **제출 필수 항목:** 공개 GitHub 저장소, 3분 데모 영상. [제출 폼](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit)과 [참가자 가이드](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)는 로그인해야 보인다.
 - **심사 배점:** Impact 30, Use of Meta AI Tooling 25, Demo 25, Technical Depth & Execution 20.
+- **문제 영역:** Build for Your World.
+
+## 설계 원칙: 기능보다 우선한다
+
+이 원칙을 어기는 기능은 추가하지 않는다.
+
+1. **커리큘럼을 미리 주지 않는다.** 구조는 입력이 아니라 결과물이다. "다음에 뭐 볼까?"에도 목록으로 답하지 않는다.
+2. **성실함을 요구하지 않는다.** "나중에 다시 보세요"는 작동하지 않는다. 사용자가 원래 하는 행동(또 같은 질문을 하는 것)에 맞춘다.
+3. **산만함은 데이터다.** 주제에서 벗어나도 막지 않고 흔적으로 남긴다.
+4. **봤다와 안다를 구분한다.** 지도는 방문이 아니라 실제 기억을 기준으로 상태를 관리한다.
+5. **구멍은 그 조각만 메운다.** 여러 개여도 지금 필요한 하나만 짚고 바로 원래 질문으로 돌아간다.
+6. **능동 개입은 대화 안에서만 한다.** 문맥 없는 알림은 금지다.
+
+하지 말 것: 진단·증상 평가·집중력 점수, 치료·개선 주장(학습을 돕는 도구로만 표현한다), 마인드맵을 결과물로 만들어 주고 끝내기.
 
 ## 반드시 지킬 것
 
@@ -23,20 +37,30 @@ Meta Global AI Developer Hackathon 제출 프로젝트다. 주제는 아직 정�
 - **Muse Wonder를 쓰지 않는다.** 한국에서 제공되지 않고, 해외 서버를 거치는 우회는 Meta 지역 정책 위반이다.
 - **API 키는 서버에만 둔다.** `NEXT_PUBLIC_`을 붙이지 않고, 키를 쓰는 모듈에는 `server-only`를 넣는다. 저장소가 공개되므로 `.env*`의 실제 값을 커밋하지 않는다.
 - **Contributor 모델에 실제 사용자 데이터를 넣지 않는다.** 보낸 내용이 Meta 모델 학습에 쓰일 수 있다. 코드 기본값은 Standard이고, 개발 환경에서만 `META_TEXT_MODEL`로 켠다.
-- **피할 주제:** 의료 조언 AI, 단순 RAG, 단순 이미지 분석기, 단순 교육 챗봇, 채용 지원서 심사, 영양 코치, 성격 분석, 스포츠 분석·코치, 정치·전쟁 관련.
+- **피할 주제:** 의료 조언 AI, 단순 RAG, 단순 이미지 분석기, 단순 교육 챗봇, 채용 지원서 심사, 영양 코치, 성격 분석, 스포츠 분석·코치, 정치·전쟁 관련. 단순 교육 챗봇으로 보이지 않도록 지도와 복기가 데모의 중심이어야 한다.
+
+## 구조
+
+- **한 턴:** `app/api/turn/route.ts`. Muse Spark가 턴을 구조화 출력으로 읽고(`lib/trail/analyze.ts`), 엔진이 지도를 바꾸며 이번 턴에 할 일을 하나 정하고(`lib/trail/engine.ts`), Muse Spark가 그 지시대로 답변을 스트리밍한다(`lib/trail/prompts.ts`).
+- **상태 변경은 엔진만 한다.** 모델은 읽고 쓰기만 한다. 답변 문구에 따라 지도가 달라지면 안 되고, 새 규칙은 `lib/trail/engine.test.ts`에 테스트로 남긴다.
+- **세션은 브라우저에 있다.** 서버에 저장하지 않고, 지도는 턴마다 브라우저가 보낸다. 그래서 `lib/trail/types.ts`의 크기 제한이 프롬프트 크기와 비용의 상한이다.
+- **상태는 스펙의 3개에 `seen`을 더한 4개다.** 3개로는 막 본 개념을 나타낼 수 없다. `fuzzy`로 두면 스펙 3.6에 따라 바로 구멍으로 잡혀 같은 설명을 반복하고, 복기 실패로 흐려지는 변화도 보이지 않는다. `solid`로 두면 봤다와 안다의 구분이 사라진다.
 
 ## Meta Model API 연동
 
 - **문서는 원문으로 읽는다.** `https://dev.meta.ai/docs/<경로>.md`로 마크다운을 받을 수 있고, 전체 목록은 `https://dev.meta.ai/llms.txt`에 있다.
-- **텍스트:** AI SDK의 `metaTextModel()`과 `metaTextOptions()`를 함께 쓴다. `store: false`와 암호화된 추론 재전송이 Meta 권장 방식이다. 여러 턴에 걸쳐 추론을 유지하려면 UI 스트림에 `sendReasoning: true`가 필요하다.
-- **대화 기록은 `toReplayableMessages()`를 거쳐 보낸다.** Meta는 결과 없는 도구 호출, 암호화 내용 없는 추론, 뒤에 답변이 없는 추론을 HTTP 400으로 거부한다. 응답을 중간에 멈추면 이런 부분이 기록에 남아 이후 모든 턴이 실패한다.
-- **이미지·세그멘테이션:** `metaApiClient()`(OpenAI SDK)로 호출한다. SAM 마스크는 `bounds`에 맞춰 늘려 그린다.
-- **Vercel 함수 본문 제한은 4.5MB다.** 큰 파일은 함수로 받지 말고 Blob 직접 업로드를 쓴다. Muse Image는 `response_format: "url"`로 받는다.
+- **텍스트:** AI SDK의 `metaTextModel()`과 `metaTextOptions()`를 함께 쓴다. 구조화 출력은 `generateText`의 `Output.object`로 받고, `strictJsonSchema: false`로 보낸다. Meta는 strict와 상관없이 출력을 스키마에 맞추므로 strict는 실패 경로만 늘린다.
+- **추론 토큰은 출력 토큰 상한에 포함된다.** `maxOutputTokens`를 줄이면 JSON이 잘릴 수 있다.
+- **이미지는 던진 턴에만 보낸다.** 이후 턴에는 모델이 읽은 설명만 보낸다(`lib/trail/request.ts`). 이미지는 `user` 메시지에만 넣을 수 있다.
+- **SAM은 부가 기능이다.** 실패하거나 아무것도 못 찾아도 턴은 계속된다. 마스크는 `bounds`에 맞춰 늘려 그린다.
+- **Vercel 함수 본문 제한은 4.5MB다.** 그래서 브라우저에서 이미지를 줄여 보낸다(`lib/trail/image.ts`).
 - **새 `/api` 경로는 `proxy.ts`의 호출 제한을 자동으로 적용받는다.** 본문 크기 상한은 `parseJsonBody`로 경로마다 정한다. 요청 본문은 곧 과금되는 입력 토큰이다.
 
 ## 작업 전후 확인
 
 ```bash
 npm run typecheck && npm run lint && npm run test && npm run build
-npm run smoke   # 실제 API 호출. 실행당 약 $0.02가 든다.
+npm run smoke   # 실제 API 호출과 데모 리허설. 실행당 약 $0.05가 든다.
 ```
+
+개발 서버는 `localhost`로 접속한다. `127.0.0.1`은 Next 16이 교차 출처로 막아 화면은 보이지만 동작하지 않는다.
