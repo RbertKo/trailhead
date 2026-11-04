@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import type { Copy } from "@/lib/trail/copy";
-import { isRecallDue } from "@/lib/trail/engine";
+import { findById, isRecallDue } from "@/lib/trail/engine";
 import type { DroppedImage } from "@/lib/trail/image";
 import {
   curvePath,
@@ -13,25 +13,21 @@ import {
   stopShort,
   walkedSegments,
 } from "@/lib/trail/layout";
-import type { KnowledgeNode, TrailState } from "@/lib/trail/types";
+import type { TrailState } from "@/lib/trail/types";
 
 import { STATE_ICONS } from "./state-icons";
 
 const NODE_RADIUS = 22;
 const RECENT_SEGMENTS = 4;
 
-function latestDropImage(
-  node: KnowledgeNode,
-  trail: TrailState,
-  images: Record<string, DroppedImage>,
-) {
-  const imageId = trail.traces.findLast(
-    (trace) =>
-      trace.type === "drop" &&
-      trace.imageId !== null &&
-      trace.nodeIds.includes(node.id),
-  )?.imageId;
-  return imageId ? images[imageId]?.thumbnail : undefined;
+/** Each concept's most recently dropped image. */
+function latestDrops(trail: TrailState) {
+  const drops = new Map<string, string>();
+  for (const { type, imageId, nodeIds } of trail.traces) {
+    if (type !== "drop" || !imageId) continue;
+    for (const nodeId of nodeIds) drops.set(nodeId, imageId);
+  }
+  return drops;
 }
 
 export function TrailMap({
@@ -73,15 +69,16 @@ export function TrailMap({
     [trail.nodes, width],
   );
   const route = useMemo(() => walkedSegments(trail), [trail]);
+  const drops = useMemo(() => latestDrops(trail), [trail]);
 
   const prerequisiteEdges = trail.nodes.flatMap((node) =>
     node.prerequisiteIds.flatMap((prerequisiteId) => {
-      const prerequisite = trail.nodes.find(({ id }) => id === prerequisiteId);
+      const prerequisite = findById(trail.nodes, prerequisiteId);
       return prerequisite ? [{ from: prerequisite, to: node }] : [];
     }),
   );
   const parentEdges = trail.nodes.flatMap((node) => {
-    const parent = trail.nodes.find(({ id }) => id === node.parentId);
+    const parent = findById(trail.nodes, node.parentId);
     return parent ? [{ from: parent, to: node }] : [];
   });
 
@@ -181,7 +178,7 @@ export function TrailMap({
             const Icon = STATE_ICONS[node.state];
             const isFocus = trail.focusId === node.id;
             const isDue = isRecallDue(node, clock);
-            const thumbnail = latestDropImage(node, trail, images);
+            const thumbnail = images[drops.get(node.id) ?? ""]?.thumbnail;
 
             return (
               <button
