@@ -1,19 +1,23 @@
-// Checks the real Meta Model API with the code paths the app uses:
+// Checks the real Meta Model API with the code paths the app uses, then rehearses
+// the demo against it:
 //   npm run smoke
-// It spends a little real money (about $0.02 per run). It covers the key, the
-// billing setup, regional model availability and the AI SDK reasoning replay.
-import { isStepCount, streamText } from "ai";
+// It spends a little real money (about $0.05 per run). Run it before recording.
+import { streamText } from "ai";
 
-import { chatTools } from "@/lib/ai/tools";
 import { toApiError } from "@/lib/api/errors";
-import {
-  metaApiClient,
-  metaTextModel,
-  metaTextOptions,
-} from "@/lib/meta/client";
+import { metaApiClient, metaTextModel, metaTextOptions } from "@/lib/meta/client";
 import { getMetaConfig, MissingApiKeyError } from "@/lib/meta/config";
-import { generateImage } from "@/lib/meta/image";
 import { segmentImage } from "@/lib/meta/segment";
+import { analyzeTurn, userMessage } from "@/lib/trail/analyze";
+import { advanceTime, applyTurn, completeTurn } from "@/lib/trail/engine";
+import { replySystem, type HistoryMessage } from "@/lib/trail/prompts";
+import { EMPTY_TRAIL, type TrailState } from "@/lib/trail/types";
+
+const DAY = 24 * 60 * 60 * 1000;
+
+function context() {
+  return { now: Date.now(), newId: () => crypto.randomUUID() };
+}
 
 async function checkModels(): Promise<string> {
   const { models } = getMetaConfig();
@@ -26,60 +30,157 @@ async function checkModels(): Promise<string> {
   return `${available.size} models available, configured models present`;
 }
 
-// The second step sends the encrypted reasoning and tool output back, which is
-// the part of the AI SDK integration that Meta's docs do not show directly.
-async function checkTextAndTools(): Promise<string> {
+async function checkStructuredOutput(): Promise<string> {
+  const analysis = await analyzeTurn({
+    trail: EMPTY_TRAIL,
+    history: [],
+    message: { text: "역전파 설명해줘", image: null },
+  });
+  if (!analysis) throw new Error("No usable structured output");
+  if (analysis.concepts.length === 0) throw new Error("No concepts returned");
+  return JSON.stringify({
+    moment: analysis.moment,
+    focusLabel: analysis.focusLabel,
+    concepts: analysis.concepts.map((concept) => concept.label),
+    prerequisites: analysis.concepts[0].prerequisites,
+    blocking: analysis.concepts[0].blockingPrerequisite,
+  });
+}
+
+async function checkReplyStream(): Promise<string> {
   let streamError: unknown;
+  const message = "경사하강법이 뭐야?";
+  const turn = applyTurn(
+    EMPTY_TRAIL,
+    { text: message, imageId: null },
+    null,
+    context(),
+  );
   const result = streamText({
     model: metaTextModel(),
-    prompt:
-      "What time is it in Asia/Seoul right now? Call the tool, then answer in one short sentence.",
-    tools: chatTools,
-    stopWhen: isStepCount(3),
-    maxOutputTokens: 1024,
+    system: replySystem(turn.plan, turn.trail, null),
+    messages: [userMessage(message)],
+    maxOutputTokens: 2048,
     providerOptions: metaTextOptions({ reasoningEffort: "low" }),
     onError: ({ error }) => {
       streamError = error;
     },
   });
 
-  const [text, steps] = await Promise.all([result.text, result.steps]).catch(
-    (error) => {
-      throw streamError ?? error;
-    },
-  );
+  let chunks = 0;
+  for await (const delta of result.textStream) {
+    if (delta) chunks += 1;
+  }
   if (streamError) throw streamError;
-
-  const toolCalls = steps.flatMap((step) => step.toolCalls).length;
-  if (toolCalls === 0) throw new Error("The model did not call the tool");
-  if (!text.trim()) throw new Error("No text after the tool result");
-  return `${steps.length} steps, ${toolCalls} tool call(s): ${text.trim()}`;
+  const text = await result.text;
+  if (!text.trim()) throw new Error("The reply was empty");
+  return `${chunks} chunks: ${text.trim().slice(0, 80)}…`;
 }
 
-let generatedImageUrl: string | undefined;
+let dropped: { id: string; url: string } | undefined;
 
-async function checkImage(): Promise<string> {
-  const { url } = await generateImage(
-    "A single red apple on a plain white table",
-  );
-  generatedImageUrl = url;
-  return "image generated";
-}
-
-async function checkSegment(): Promise<string> {
-  if (!generatedImageUrl) throw new Error("Skipped: no image to segment");
-  const objects = await segmentImage({
-    imageUrl: generatedImageUrl,
-    concept: "apple",
+// The image is only test input. The app itself never generates images.
+async function checkDropReading(): Promise<string> {
+  const generated = await metaApiClient().images.generate({
+    model: "muse-image-1.0",
+    prompt:
+      "A simple whiteboard diagram of a neural network with three labelled layers",
+    n: 1,
+    response_format: "url",
   });
-  return `${objects.length} object(s) segmented`;
+  const url = generated.data?.[0]?.url;
+  if (!url) throw new Error("Muse Image returned no URL");
+
+  const response = await fetch(url);
+  const type = response.headers.get("content-type") ?? "image/webp";
+  const bytes = Buffer.from(await response.arrayBuffer());
+  dropped = {
+    id: "smoke",
+    url: `data:${type};base64,${bytes.toString("base64")}`,
+  };
+
+  const analysis = await analyzeTurn({
+    trail: EMPTY_TRAIL,
+    history: [],
+    message: { text: "", image: dropped },
+  });
+  if (!analysis?.imageDescription) throw new Error("The image was not read");
+  if (analysis.concepts.length === 0) throw new Error("Nothing to place");
+  return JSON.stringify({
+    imageDescription: analysis.imageDescription,
+    keyRegion: analysis.keyRegion,
+    concepts: analysis.concepts.map((concept) => concept.label),
+  });
+}
+
+async function checkSegmentation(): Promise<string> {
+  if (!dropped) throw new Error("Skipped: no image to segment");
+  const objects = await segmentImage({
+    imageUrl: dropped.url,
+    concept: "diagram",
+  });
+  return `${objects.length} region(s) found. Zero is valid, and the app carries on without one.`;
+}
+
+/** Runs the demo script through the same reading and engine the app uses. */
+async function checkDemoScript(): Promise<string> {
+  let trail: TrailState = EMPTY_TRAIL;
+  const history: HistoryMessage[] = [];
+
+  async function say(text: string) {
+    const analysis = await analyzeTurn({
+      trail,
+      history,
+      message: { text, image: null },
+    });
+    if (!analysis) throw new Error(`No usable reading for: ${text}`);
+    const turn = applyTurn(trail, { text, imageId: null }, analysis, context());
+    trail = completeTurn(turn.trail, turn.plan, "(reply)", context());
+    history.push({ role: "user", text }, { role: "assistant", text: "(reply)" });
+    return turn;
+  }
+
+  const steps: string[] = [];
+  const expect = (text: string, actual: string, ...wanted: string[]) => {
+    steps.push(`"${text}" -> ${actual}`);
+    if (!wanted.includes(actual)) {
+      throw new Error(
+        `Expected ${wanted.join(" or ")}.\n      So far:\n      ${steps.join("\n      ")}`,
+      );
+    }
+  };
+
+  const wish = "AI 공부하고 싶어";
+  expect(wish, (await say(wish)).plan.kind, "open");
+
+  const question = "역전파 설명해줘";
+  const gap = await say(question);
+  expect(question, gap.plan.kind, "gap");
+  steps.push(`  hole: ${gap.callout.nodeLabel}, back to: ${gap.callout.focusLabel}`);
+
+  trail = advanceTime(trail, 7 * DAY, Date.now());
+  steps.push("(7 days pass)");
+
+  const related = "CNN은 어떻게 학습시켜?";
+  const recall = await say(related);
+  expect(related, recall.plan.kind, "recall_ask");
+  steps.push(`  testing: ${recall.callout.nodeLabel}`);
+
+  const stumble = "음... 뭐였더라. 잘 기억 안 나";
+  const graded = await say(stumble);
+  expect(stumble, graded.plan.kind, "recall_result");
+  expect(stumble, graded.callout.verdict ?? "none", "fuzzy");
+
+  return steps.join("\n      ");
 }
 
 const checks: [name: string, run: () => Promise<string>][] = [
   ["List models", checkModels],
-  ["Muse Spark: streaming + tool loop", checkTextAndTools],
-  ["Muse Image: generate", checkImage],
-  ["SAM 3.1: segment", checkSegment],
+  ["Muse Spark: structured output", checkStructuredOutput],
+  ["Muse Spark: streaming reply", checkReplyStream],
+  ["Muse Spark: reading a dropped image", checkDropReading],
+  ["SAM 3.1: segmenting a dropped image", checkSegmentation],
+  ["Demo script: hole, then recall failure", checkDemoScript],
 ];
 
 async function main() {
@@ -102,9 +203,7 @@ async function main() {
     } catch (error) {
       failures += 1;
       const raw = error instanceof Error ? error.message : String(error);
-      console.log(
-        `FAIL  ${name}\n      ${toApiError(error).code}: ${raw}`,
-      );
+      console.log(`FAIL  ${name}\n      ${toApiError(error).code}: ${raw}`);
     }
   }
 
