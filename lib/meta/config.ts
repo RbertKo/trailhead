@@ -1,3 +1,5 @@
+import "server-only";
+
 export const DEFAULT_META_BASE_URL = "https://api.meta.ai/v1";
 
 // Standard-mode IDs are the default: Contributor mode lets Meta train on the

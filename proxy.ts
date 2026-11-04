@@ -13,6 +13,8 @@ const checkRateLimit = createRateLimiter({
 // Every /api route spends Meta credits, so the limit lives here where a new
 // route cannot forget it.
 export function proxy(request: NextRequest) {
+  // Vercel overwrites this header, so clients cannot spoof it there. Behind any
+  // other host, check that it is set by something trusted.
   const clientIp =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
