@@ -70,7 +70,7 @@ engine (plain TypeScript) ──────► updates the map and decides the 
         │                         fill a hole, test memory, offer a return, or answer
         ├──► the map updates in the browser: a new hole appears
         ▼
-Muse Spark streams the reply, following that decision   (SAM 3.1 runs alongside)
+Muse Spark streams the reply, following that decision   (SAM 3.1 runs separately)
         │
         ▼
 reply delivered ────────────────► the hole counts as filled, and the path extends
@@ -78,7 +78,7 @@ reply delivered ────────────────► the hole cou
 
 The model reads and writes. The state machine in
 [`lib/trail/engine.ts`](lib/trail/engine.ts) decides, so what happens to the map never
-depends on how a reply is worded, and all of it is covered by unit tests.
+depends on how a reply is worded, and every rule has a unit test.
 
 ## Getting started
 
@@ -135,6 +135,7 @@ and later turns carry only the text description.
 app/
   page.tsx            The app: conversation on the left, trail on the right
   api/turn/           One learner turn: read, decide, reply
+  api/region/         SAM 3.1: the key region of a dropped image
 components/
   trail/              The conversation, the map and its details
   ui/                 shadcn/ui components

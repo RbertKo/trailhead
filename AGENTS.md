@@ -52,7 +52,8 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 - **텍스트:** AI SDK의 `metaTextModel()`과 `metaTextOptions()`를 함께 쓴다. 구조화 출력은 `generateText`의 `Output.object`로 받고, `strictJsonSchema: false`로 보낸다. Meta는 strict와 상관없이 출력을 스키마에 맞추므로 strict는 실패 경로만 늘린다.
 - **추론 토큰은 출력 토큰 상한에 포함된다.** `maxOutputTokens`를 줄이면 JSON이 잘릴 수 있다.
 - **이미지는 던진 턴에만 보낸다.** 이후 턴에는 모델이 읽은 설명만 보낸다(`lib/trail/request.ts`). 이미지는 `user` 메시지에만 넣을 수 있다.
-- **SAM은 부가 기능이다.** 실패하거나 아무것도 못 찾아도 턴은 계속된다. 마스크는 `bounds`에 맞춰 늘려 그린다.
+- **SAM은 부가 기능이고 턴과 분리돼 있다.** `/api/region`으로 따로 호출하므로 느려도 답변과 입력을 막지 않고, 실패하거나 아무것도 못 찾아도 턴은 그대로다. 마스크는 `bounds`에 맞춰 늘려 그린다.
+- **응답이 비거나 JSON이 깨지면 지도 변경 없이 대화를 잇는다.** `NoObjectGeneratedError`와 `NoOutputGeneratedError` 모두 해당한다. 키·결제·호출 제한 오류는 답변도 실패하므로 그대로 오류로 보여준다.
 - **Vercel 함수 본문 제한은 4.5MB다.** 그래서 브라우저에서 이미지를 줄여 보낸다(`lib/trail/image.ts`).
 - **새 `/api` 경로는 `proxy.ts`의 호출 제한을 자동으로 적용받는다.** 본문 크기 상한은 `parseJsonBody`로 경로마다 정한다. 요청 본문은 곧 과금되는 입력 토큰이다.
 
