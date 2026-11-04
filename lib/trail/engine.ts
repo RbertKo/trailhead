@@ -394,8 +394,19 @@ export function applyTurn(
     };
   };
 
-  const askRecall = (node: KnowledgeNode, returnToId: string | null) =>
-    finish({
+  // Asking about a concept isn't being told about it. When a turn puts the answer
+  // off, whatever it newly brought up stays unseen until a reply explains it.
+  const postponeExplanations = () => {
+    for (const node of draft.nodes) {
+      const previous = findById(before.nodes, node.id);
+      const wasUnseen = !previous || previous.state === "unseen";
+      if (node.state === "seen" && wasUnseen) node.state = "unseen";
+    }
+  };
+
+  const askRecall = (node: KnowledgeNode, returnToId: string | null) => {
+    postponeExplanations();
+    return finish({
       kind: "recall_ask",
       nodeId: node.id,
       // "What's next?" is no question to return to: answering it after the check
@@ -403,6 +414,7 @@ export function applyTurn(
       originalQuestion: returnToId ? question : "",
       returnToId,
     });
+  };
 
   // A reply to what the last turn asked. Anything else just moves on: an ignored
   // recall check is dropped and never repeated. A thrown image is for the map, so
@@ -539,6 +551,7 @@ export function applyTurn(
     previous.state !== "unseen" &&
     !isFollowUp
   ) {
+    postponeExplanations();
     return finish({
       kind: "revisit_offer",
       nodeId: focus.id,
@@ -583,13 +596,22 @@ export function completeTurn(
     case "answer":
       if (plan.focusId) addAnswer([plan.focusId]);
       break;
-    case "recall_result":
-      // A failed check stays fuzzy even though it was just re-taught: being told
-      // again is not remembering. Only a passed check clears it.
-      addAnswer(
-        plan.returnToId ? [plan.nodeId, plan.returnToId] : [plan.nodeId],
-      );
+    case "recall_result": {
+      // The question the check interrupted has now been answered.
+      const returnTo = findById(draft.nodes, plan.returnToId);
+      if (returnTo) draft.meet(returnTo);
+
+      // Only what this reply explained counts as explained. A passed check is
+      // acknowledged, not re-taught, so the concept keeps its earlier explanation
+      // for later re-teaching and grading. A failed check stays fuzzy even though
+      // it was just re-taught: being told again is not remembering.
+      const explained = [
+        ...(plan.verdict === "fuzzy" ? [plan.nodeId] : []),
+        ...(plan.returnToId ? [plan.returnToId] : []),
+      ];
+      if (explained.length > 0) addAnswer(explained);
       break;
+    }
     case "revisit_resume":
       addAnswer([plan.nodeId]);
       break;

@@ -70,14 +70,10 @@ function session(initial: TrailState = EMPTY_TRAIL, startAt = START) {
       turnAnalysis: TurnAnalysis | null,
       text = "a message",
       imageId: string | null = null,
+      reply = "the reply",
     ): TurnPlan {
       const result = applyTurn(trail, { text, imageId }, turnAnalysis, context());
-      trail = completeTurn(
-        result.trail,
-        result.plan,
-        "the reply",
-        context(),
-      );
+      trail = completeTurn(result.trail, result.plan, reply, context());
       now += 1000;
       return result.plan;
     },
@@ -209,6 +205,127 @@ describe("the demo scenario", () => {
     expect(s.turn(asking("역전파")).kind).toBe("recall_ask");
     s.turn(analysis({ moment: "other", recallVerdict: "solid" }));
     expect(s.node("역전파").state).toBe("solid");
+  });
+});
+
+describe("what a recall result records as explained", () => {
+  function waitingOnBackprop() {
+    const s = session();
+    s.turn(asking("역전파"), "역전파 알려줘", null, "backprop explanation");
+    s.wait(4 * DAY);
+    s.turn(asking("CNN", { prerequisites: ["역전파"] }), "CNN은?");
+    expect(s.trail.pending?.kind).toBe("recall");
+    return s;
+  }
+
+  const gradedAs = (verdict: "solid" | "fuzzy") =>
+    analysis({ moment: "other", recallVerdict: verdict });
+
+  it("keeps a remembered concept's explanation when the reply moves on", () => {
+    const s = waitingOnBackprop();
+    s.turn(gradedAs("solid"), "오차를 거꾸로 보내", null, "cnn explanation");
+
+    expect(lastAnswerFor(s.trail, s.node("역전파").id)).toBe("backprop explanation");
+    expect(lastAnswerFor(s.trail, s.node("CNN").id)).toBe("cnn explanation");
+  });
+
+  it("records a re-teach for the concept that was re-taught", () => {
+    const s = waitingOnBackprop();
+    s.turn(gradedAs("fuzzy"), "모르겠어", null, "backprop again, then cnn");
+
+    expect(lastAnswerFor(s.trail, s.node("역전파").id)).toBe("backprop again, then cnn");
+    expect(lastAnswerFor(s.trail, s.node("CNN").id)).toBe("backprop again, then cnn");
+  });
+
+  it("doesn't replace an explanation with praise after wrapping up", () => {
+    const s = session();
+    s.turn(asking("A"), "A?", null, "the explanation of A");
+    s.wait(4 * DAY);
+    s.turn(analysis({ moment: "wrapping_up" }), "이제 뭐 볼까");
+    s.turn(gradedAs("solid"), "그건 이거야", null, "잘 기억하네");
+
+    expect(lastAnswerFor(s.trail, s.node("A").id)).toBe("the explanation of A");
+  });
+});
+
+describe("a concept whose explanation is put off", () => {
+  function askedDuringCheck() {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+    s.turn(asking("CNN", { prerequisites: ["역전파"] }), "CNN은?");
+    return s;
+  }
+
+  it("stays unseen while a recall check comes first", () => {
+    const s = askedDuringCheck();
+    expect(s.node("CNN").state).toBe("unseen");
+    // The question is still on the record.
+    expect(s.trail.traces.at(-1)).toMatchObject({
+      type: "question",
+      content: "CNN은?",
+      nodeIds: [s.node("CNN").id],
+    });
+  });
+
+  it("becomes seen once the reply after the check has explained it", () => {
+    const s = askedDuringCheck();
+    s.turn(analysis({ moment: "other", recallVerdict: "fuzzy" }));
+    expect(s.node("CNN").state).toBe("seen");
+    expect(s.trail.focusId).toBe(s.node("CNN").id);
+  });
+
+  it("stays unseen when the check's reply never arrives", () => {
+    const s = askedDuringCheck();
+    s.startTurn(analysis({ moment: "other", recallVerdict: "fuzzy" }));
+    expect(s.node("CNN").state).toBe("unseen");
+  });
+
+  it("stays unseen when the learner ignores the check and moves on", () => {
+    const s = askedDuringCheck();
+    s.turn({ ...asking("강화학습"), recallVerdict: "not_answered" });
+    expect(s.node("CNN").state).toBe("unseen");
+    // So it isn't tested later as if it had been seen.
+    expect(isRecallDue(s.node("CNN"), START + 365 * DAY)).toBe(false);
+  });
+
+  it("can then be stopped for as a hole, like anything never explained", () => {
+    const s = askedDuringCheck();
+    s.turn({ ...asking("강화학습"), recallVerdict: "not_answered" });
+    const plan = s.turn(
+      asking("전이 학습", {
+        prerequisites: ["CNN"],
+        blockingPrerequisite: "CNN",
+      }),
+    );
+    expect(plan).toMatchObject({ kind: "gap", gapId: s.node("CNN").id });
+  });
+
+  it("doesn't undo what the learner had already seen", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.turn(asking("경사하강법"));
+    s.wait(4 * DAY);
+    s.turn(asking("역전파", { prerequisites: ["경사하강법"] }));
+    expect(s.trail.pending?.kind).toBe("recall");
+    expect(s.node("역전파").state).toBe("seen");
+    expect(s.node("경사하강법").state).toBe("seen");
+  });
+
+  it("stays unseen while a continue-or-review offer is waiting", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.turn(asking("강화학습"));
+    const plan = s.turn(
+      analysis({
+        moment: "coming_back",
+        focusLabel: "역전파",
+        concepts: [concept("역전파"), concept("연쇄 법칙")],
+      }),
+    );
+    expect(plan.kind).toBe("revisit_offer");
+    expect(s.node("역전파").state).toBe("seen");
+    expect(s.node("연쇄 법칙").state).toBe("unseen");
   });
 });
 
