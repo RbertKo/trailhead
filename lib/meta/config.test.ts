@@ -28,11 +28,11 @@ describe("getMetaConfig", () => {
       MODEL_API_KEY: "key",
       META_API_BASE_URL: "http://localhost:4010/v1",
       META_TEXT_MODEL: "muse-spark-1.3-contributor",
-      META_IMAGE_MODEL: "  ",
+      META_SEGMENT_MODEL: "  ",
     });
 
     expect(config.baseURL).toBe("http://localhost:4010/v1");
     expect(config.models.text).toBe("muse-spark-1.3-contributor");
-    expect(config.models.image).toBe(DEFAULT_META_MODELS.image);
+    expect(config.models.segment).toBe(DEFAULT_META_MODELS.segment);
   });
 });
