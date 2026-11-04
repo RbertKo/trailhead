@@ -29,6 +29,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트다. 주제는 아직 정�
 
 - **문서는 원문으로 읽는다.** `https://dev.meta.ai/docs/<경로>.md`로 마크다운을 받을 수 있고, 전체 목록은 `https://dev.meta.ai/llms.txt`에 있다.
 - **텍스트:** AI SDK의 `metaTextModel()`과 `metaTextOptions()`를 함께 쓴다. `store: false`와 암호화된 추론 재전송이 Meta 권장 방식이다. 여러 턴에 걸쳐 추론을 유지하려면 UI 스트림에 `sendReasoning: true`가 필요하다.
+- **대화 기록은 `toReplayableMessages()`를 거쳐 보낸다.** Meta는 결과 없는 도구 호출, 암호화 내용 없는 추론, 뒤에 답변이 없는 추론을 HTTP 400으로 거부한다. 응답을 중간에 멈추면 이런 부분이 기록에 남아 이후 모든 턴이 실패한다.
 - **이미지·세그멘테이션:** `metaApiClient()`(OpenAI SDK)로 호출한다. SAM 마스크는 `bounds`에 맞춰 늘려 그린다.
 - **Vercel 함수 본문 제한은 4.5MB다.** 큰 파일은 함수로 받지 말고 Blob 직접 업로드를 쓴다. Muse Image는 `response_format: "url"`로 받는다.
 - **새 `/api` 경로는 `proxy.ts`의 호출 제한을 자동으로 적용받는다.** 본문 크기 상한은 `parseJsonBody`로 경로마다 정한다. 요청 본문은 곧 과금되는 입력 토큰이다.
