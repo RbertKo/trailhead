@@ -2,6 +2,7 @@
   "name": "meta-global-ai-developer-hackathon-2026",
   "version": "0.1.0",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE.md",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

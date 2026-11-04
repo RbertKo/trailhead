@@ -167,3 +167,11 @@ This repository was started during the hackathon's building period (Oct 27 to No
 2026, ET). Everything in it was written during that period, apart from open-source
 dependencies and the generated shadcn/ui components in `components/ui/`. The commit
 history shows how it was built.
+
+## License
+
+Trailhead is source-available under the [Sustainable Use License](LICENSE.md), the same
+license [n8n](https://github.com/n8n-io/n8n) uses. The code is public, and you can use and
+modify it for free for personal or non-commercial use or inside your own company. Selling
+it, or offering it to others as a paid service, isn't allowed. Third-party components keep
+their own licenses.

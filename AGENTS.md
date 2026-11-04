@@ -17,6 +17,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 - **제출 필수 항목:** 공개 GitHub 저장소, 3분 데모 영상. [제출 폼](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit)과 [참가자 가이드](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)는 로그인해야 보인다.
 - **심사 배점:** Impact 30, Use of Meta AI Tooling 25, Demo 25, Technical Depth & Execution 20.
 - **문제 영역:** Build for Your World.
+- **라이선스:** Sustainable Use License (n8n과 같음, `LICENSE.md`). 저장소는 공개지만 OSI 승인 오픈소스는 아니며 상업적 재판매와 유료 제공을 막는다. 해커톤 규칙의 "Open source: Repositories must be public"은 공개 저장소로 충족한다. 오픈소스라고 표현하지 않는다.
 
 ## 설계 원칙: 기능보다 우선한다
 
