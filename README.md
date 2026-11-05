@@ -187,7 +187,7 @@ The tailnet needs HTTPS certificates turned on, and its policy has to grant the 
 `funnel` attribute.
 
 ```bash
-cp .env.example .env.local   # then set MODEL_API_KEY
+cp .env.example .env.local   # then set MODEL_API_KEY, AUTH_EMAIL and AUTH_PASSWORD
 
 # Log the node in once. Its normal start gives up after 60 seconds and changes the link.
 docker compose run --rm --no-deps --entrypoint sh tailscale -c 'tailscaled --statedir=/var/lib/tailscale --tun=userspace-networking --socket=/tmp/ts.sock >/dev/null 2>&1 & sleep 3; tailscale --socket=/tmp/ts.sock up --hostname=trailhead-demo'
@@ -195,7 +195,7 @@ docker compose run --rm --no-deps --entrypoint sh tailscale -c 'tailscaled --sta
 docker compose up -d --build
 ```
 
-The key is passed in when the container starts and never goes into the image. To update
+These values are passed in when the container starts and never go into the image. To update
 the app and leave the node alone, run `git pull && docker compose up -d --build web`.
 
 ## Built during the hackathon
