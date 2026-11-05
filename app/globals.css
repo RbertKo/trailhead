@@ -1,0 +1,215 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Literal names: `@theme inline` cannot resolve next/font's runtime variables. */
+  --font-sans:
+    "Geist", "Geist Fallback", "Apple SD Gothic Neo", "Noto Sans KR",
+    ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-heading: var(--font-sans);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-map: var(--map);
+  --color-map-line: var(--map-line);
+  --color-route: var(--route);
+  --color-state-solid: var(--state-solid);
+  --color-state-seen: var(--state-seen);
+  --color-state-seen-ink: var(--state-seen-ink);
+  --color-state-fuzzy: var(--state-fuzzy);
+  --color-state-fuzzy-ink: var(--state-fuzzy-ink);
+  --color-state-hole: var(--state-hole);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* A paper trail map: warm paper, pine ink, one route colour. */
+:root {
+  --background: oklch(0.977 0.012 95);
+  --foreground: oklch(0.27 0.03 165);
+  --card: oklch(0.993 0.006 95);
+  --card-foreground: oklch(0.27 0.03 165);
+  --popover: oklch(0.993 0.006 95);
+  --popover-foreground: oklch(0.27 0.03 165);
+  --primary: oklch(0.41 0.085 160);
+  --primary-foreground: oklch(0.985 0.01 95);
+  --secondary: oklch(0.94 0.018 110);
+  --secondary-foreground: oklch(0.3 0.04 160);
+  --muted: oklch(0.945 0.014 100);
+  --muted-foreground: oklch(0.45 0.025 155);
+  --accent: oklch(0.925 0.03 130);
+  --accent-foreground: oklch(0.3 0.04 160);
+  --destructive: oklch(0.52 0.19 30);
+  --border: oklch(0.885 0.018 100);
+  --input: oklch(0.86 0.02 100);
+  --ring: oklch(0.55 0.09 160);
+  --radius: 0.75rem;
+
+  --map: oklch(0.955 0.02 110);
+  --map-line: oklch(0.885 0.028 115);
+  --route: oklch(0.5 0.08 150);
+  --state-solid: oklch(0.43 0.1 160);
+  --state-seen: oklch(0.87 0.07 150);
+  --state-seen-ink: oklch(0.34 0.08 160);
+  --state-fuzzy: oklch(0.79 0.14 75);
+  --state-fuzzy-ink: oklch(0.36 0.08 60);
+  --state-hole: oklch(0.56 0.17 38);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* What each state looks like on the map. Shape and icon carry it as well as colour. */
+.trail-dot {
+  display: flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  transition:
+    background-color 0.7s ease,
+    border-color 0.7s ease,
+    box-shadow 0.7s ease,
+    color 0.7s ease;
+  animation: trail-settle 0.6s ease;
+}
+.trail-dot[data-state="solid"] {
+  background: var(--state-solid);
+  color: var(--primary-foreground);
+}
+.trail-dot[data-state="seen"] {
+  background: var(--state-seen);
+  border-color: var(--state-solid);
+  color: var(--state-seen-ink);
+}
+/* Fuzzy is literally fuzzy: the edge dissolves. */
+.trail-dot[data-state="fuzzy"] {
+  background: var(--state-fuzzy);
+  color: var(--state-fuzzy-ink);
+  box-shadow:
+    0 0 0 4px color-mix(in oklch, var(--state-fuzzy) 40%, transparent),
+    0 0 16px 8px color-mix(in oklch, var(--state-fuzzy) 55%, transparent);
+}
+/* A hole is an outline with nothing in it. */
+.trail-dot[data-state="unseen"] {
+  background: var(--map);
+  border: 2px dashed var(--state-hole);
+  color: var(--state-hole);
+}
+/* Being explained right now: on its way in, not a hole. */
+.trail-dot[data-state="unseen"][data-reading] {
+  border-color: var(--state-solid);
+  color: var(--state-solid);
+}
+.trail-dot--small {
+  width: 1rem;
+  height: 1rem;
+  animation: none;
+}
+.trail-dot--small[data-state="fuzzy"] {
+  box-shadow: 0 0 5px 2px color-mix(in oklch, var(--state-fuzzy) 60%, transparent);
+}
+.trail-dot--small[data-state="unseen"] {
+  border-width: 1.5px;
+}
+
+@keyframes trail-settle {
+  0% {
+    transform: scale(0.72);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trail-dot {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* The model's replies, rendered from Markdown. */
+.trail-prose {
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+.trail-prose > * + * {
+  margin-top: 0.7em;
+}
+/* Models often break lines with a single newline, which Markdown would swallow. */
+.trail-prose p {
+  white-space: pre-line;
+}
+.trail-prose strong {
+  font-weight: 600;
+}
+.trail-prose ul,
+.trail-prose ol {
+  padding-left: 1.25em;
+}
+.trail-prose ul {
+  list-style: disc;
+}
+.trail-prose ol {
+  list-style: decimal;
+}
+.trail-prose li + li {
+  margin-top: 0.25em;
+}
+.trail-prose code {
+  border-radius: 0.3em;
+  background: var(--muted);
+  padding: 0.1em 0.35em;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.trail-prose pre {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.75em 1em;
+  line-height: 1.5;
+}
+.trail-prose pre code {
+  background: none;
+  padding: 0;
+}
