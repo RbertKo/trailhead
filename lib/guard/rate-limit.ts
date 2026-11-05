@@ -1,4 +1,5 @@
 export const DEFAULT_REQUESTS_PER_MINUTE = 30;
+export const DEFAULT_REQUESTS_PER_DAY = 2_000;
 
 const MAX_TRACKED_KEYS = 10_000;
 
@@ -7,11 +8,17 @@ export interface RateLimitDecision {
   retryAfterSeconds: number;
 }
 
-export function parseRequestsPerMinute(value: string | undefined): number {
+function parseLimit(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0
-    ? parsed
-    : DEFAULT_REQUESTS_PER_MINUTE;
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function parseRequestsPerMinute(value: string | undefined): number {
+  return parseLimit(value, DEFAULT_REQUESTS_PER_MINUTE);
+}
+
+export function parseRequestsPerDay(value: string | undefined): number {
+  return parseLimit(value, DEFAULT_REQUESTS_PER_DAY);
 }
 
 /**

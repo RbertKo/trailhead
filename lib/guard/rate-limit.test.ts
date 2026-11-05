@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   createRateLimiter,
+  DEFAULT_REQUESTS_PER_DAY,
   DEFAULT_REQUESTS_PER_MINUTE,
+  parseRequestsPerDay,
   parseRequestsPerMinute,
 } from "./rate-limit";
 
@@ -56,6 +58,19 @@ describe("parseRequestsPerMinute", () => {
     "falls back to the default for %s",
     (value) => {
       expect(parseRequestsPerMinute(value)).toBe(DEFAULT_REQUESTS_PER_MINUTE);
+    },
+  );
+});
+
+describe("parseRequestsPerDay", () => {
+  it("uses a valid positive integer", () => {
+    expect(parseRequestsPerDay("600")).toBe(600);
+  });
+
+  it.each([undefined, "", "0", "-1", "1.5", "many"])(
+    "falls back to the default for %s",
+    (value) => {
+      expect(parseRequestsPerDay(value)).toBe(DEFAULT_REQUESTS_PER_DAY);
     },
   );
 });
