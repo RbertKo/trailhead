@@ -109,6 +109,7 @@ to `127.0.0.1`, and the page then looks fine but does nothing.
 4. Press **+7d** to simulate a week passing, then ask something related, such as
    `How do you train a CNN?`. It tests your memory first. Stumble, and the concept turns
    fuzzy, gets re-taught, and the conversation goes back to your question.
+5. Reload the page. The trail and the conversation are still there, ready to continue.
 
 The time buttons exist for this demo, so the passing of days can be shown in minutes.
 The interface is in English, with a switch to Korean at the top. Replies follow the
@@ -116,10 +117,12 @@ language you write in, so the whole flow works in either.
 
 ## Scope
 
-Built for a three-minute demo, deliberately. There are no accounts. A session lives in
-the browser tab and ends when you reload it, so nothing about a learner is stored on the
-server. Dropped images are sent to the Meta Model API with the turn they were dropped in,
-and later turns carry only the text description.
+There are no accounts. Your trail, conversation and images are saved in this browser's
+IndexedDB, so they're still there when you come back days later, which is when memory
+checks really come due. **New trail** erases them. Nothing about a learner is stored on
+the server, so a trail doesn't follow you to another browser or device, and clearing site
+data erases it. Dropped images are sent to the Meta Model API with the turn they were
+dropped in, and later turns carry only the text description.
 
 ## Scripts
 
@@ -152,6 +155,8 @@ lib/
     layout.ts         Where each concept sits on the map
     image.ts          Shrinking dropped images in the browser
     request.ts        What the browser sends for each turn
+    session.ts        What gets saved, and checking it when it's read back
+    session-store.ts  Saving the session in this browser's IndexedDB
     copy.ts           English and Korean interface text
   meta/               Meta Model API configuration, clients and SAM parsing
   api/                Request parsing and error mapping
