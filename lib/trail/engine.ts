@@ -202,12 +202,10 @@ class TrailDraft {
     return node;
   }
 
-  /** Brought up, which isn't the same as having been told about it. */
-  touch(node: KnowledgeNode) {
-    node.lastTouchedAt = this.context.now;
-  }
-
-  /** Told about it: only once a reply explaining it has been delivered. */
+  /**
+   * Told about it: only once a reply explaining it has been delivered. Merely being
+   * brought up changes nothing, or an undelivered reply would put off a due check.
+   */
   meet(node: KnowledgeNode) {
     if (node.state === "unseen") {
       node.state = "seen";
@@ -241,7 +239,6 @@ function placeConcepts(draft: TrailDraft, concepts: ConceptAnalysis[]) {
   for (const concept of concepts.slice(0, MAX_CONCEPTS_PER_TURN)) {
     const node = draft.ensureNode(concept.label);
     if (!node || placed.some((entry) => entry.node.id === node.id)) continue;
-    draft.touch(node);
     const summary = concept.summary.trim().slice(0, MAX_SUMMARY);
     if (summary) node.summary = summary;
     placed.push({ concept, node });
@@ -479,10 +476,15 @@ export function applyTurn(
     const choice = analysis?.revisitChoice;
     if (node && (choice === "continue" || choice === "review")) {
       node.lastTouchedAt = now;
+      // The reply answers the original question, so it carries over what that
+      // question was about, including anything new the offer put off.
+      const original = before.traces.findLast(
+        (trace) => trace.type === "question",
+      );
       draft.addTrace({
         type: "question",
         content: message.text,
-        nodeIds: [node.id],
+        nodeIds: [...new Set([node.id, ...(original?.nodeIds ?? [])])],
       });
       return finish({
         kind: "revisit_resume",
@@ -513,10 +515,7 @@ export function applyTurn(
   const focus =
     (analysis.focusLabel && findByLabel(draft.nodes, analysis.focusLabel)) ||
     placed[0]?.node;
-  if (focus) {
-    draft.touch(focus);
-    questionsSinceOffer += 1;
-  }
+  if (focus) questionsSinceOffer += 1;
 
   if (message.imageId || focus) {
     draft.addTrace({
@@ -684,7 +683,8 @@ export function completeTurn(
       break;
     }
     case "revisit_resume":
-      addAnswer([plan.nodeId]);
+      meetAll(asked);
+      addAnswer([plan.nodeId, ...asked]);
       break;
     // A question only counts as asked once it has reached the learner. Otherwise
     // their next message would be graded against something they never saw.

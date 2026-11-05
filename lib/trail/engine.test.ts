@@ -712,6 +712,16 @@ describe("recall checks", () => {
     ).toMatchObject({ kind: "gap", gapId: s.node("합성곱").id });
   });
 
+  it("asks again if the question never reached the learner", () => {
+    const s = session();
+    s.turn(asking("역전파"));
+    s.wait(4 * DAY);
+
+    expect(s.startTurn(asking("역전파")).plan.kind).toBe("recall_ask");
+    // Stopped, so nothing changed: the check is still due.
+    expect(s.startTurn(asking("역전파")).plan.kind).toBe("recall_ask");
+  });
+
   it("tests at most one concept in a sitting", () => {
     const s = session();
     s.turn(asking("A"));
@@ -802,6 +812,33 @@ describe("coming back", () => {
       kind: "revisit_offer",
       nodeId: s.node("역전파").id,
     });
+  });
+
+  it("finishes what the offer put off once the choice has been answered", () => {
+    const s = session();
+    s.turn(asking("역전파"), "역전파?", null, "backprop explanation");
+    s.turn(asking("강화학습"));
+
+    const offer = s.turn(
+      analysis({
+        moment: "coming_back",
+        focusLabel: "역전파",
+        concepts: [concept("역전파"), concept("연쇄 법칙")],
+      }),
+      "역전파랑 연쇄 법칙 다시 알려줘",
+    );
+    expect(offer.kind).toBe("revisit_offer");
+    expect(s.node("연쇄 법칙").state).toBe("unseen");
+
+    s.turn(
+      analysis({ moment: "other", revisitChoice: "review" }),
+      "복습할래",
+      null,
+      "both of them",
+    );
+    expect(s.node("연쇄 법칙").state).toBe("seen");
+    expect(lastAnswerFor(s.trail, s.node("연쇄 법칙").id)).toBe("both of them");
+    expect(lastAnswerFor(s.trail, s.node("역전파").id)).toBe("both of them");
   });
 
   it("moves on when the learner changes the subject instead of choosing", () => {
