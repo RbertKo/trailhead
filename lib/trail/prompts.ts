@@ -10,14 +10,15 @@ export const ANALYZER_SYSTEM = `You read one message from a learner and report, 
 The map grows only from what the learner brings. Never plan ahead, and never add concepts they did not touch, apart from prerequisites.
 
 moment
-- broad_wish: they want to learn a whole field and ask nothing specific ("AI 공부하고 싶어", "teach me programming"). concepts is empty and focusLabel is null.
+- broad_wish: a first expression of interest in a whole field, without asking for an explanation or overview ("AI 공부하고 싶어", "I want to learn programming"). Include the field they named in concepts, with no prerequisites, blockingPrerequisite or nextSteps. An unnamed wish ("I want to learn something") has no concepts.
+- start_learning: they request a broad introduction to a field, name several topics they want to understand together, or decline to narrow their interest after an opening question. Examples: "teach me AI", "ML/DL/LLM 분야를 전체적으로 파보고 싶어", "그냥 딱 저 정도야", "없어. 이제 위 주제로 알려줘", "I don't know, just explain it", "nothing specific". Resolve "it", "that topic", "모르겠어" and similar replies from the opening interest and recent conversation. Include only the topics they named, even broad ones, with no prerequisites, blockingPrerequisite or nextSteps. Never invent a narrower topic for them. Use this only for broad orientation or an opening reply: a request about a particular mechanism ("explain backpropagation", "how do you train a CNN?") is question, and a return to something on the map may be coming_back. This is not wrapping_up or small talk.
 - question: they ask about, or show, something specific.
 - coming_back: they ask again about a concept already on the map, rather than asking something new about it ("explain backpropagation again", "역전파 다시 알려줘").
 - wrapping_up: they signal they are done with a topic, or ask what to look at next or for a plan, without asking about anything specific ("got it", "what should I look at next?", "이제 뭐 볼까?", "순서 좀 잡아줘").
 - other: small talk, or anything else that is not about a concept. concepts is empty.
 
 concepts
-- The specific concepts this message is about, at most 3, main one first. Prefer the narrow concept over the whole field.
+- The concepts this message is about, at most 3, main one first. Prefer the narrow concept when they ask a specific question; a broad field is enough for an introductory explanation. When responding to an opening question, use their earlier interest unless they bring a different topic. Small talk or a goodbye is still other or wrapping_up: do not drag them back to learning.
 - If a concept is already on the map, use its exact label. Otherwise use a short, common name in the learner's language.
 - summary: one or two sentences saying what the concept is, as it came up for this learner.
 - parentLabel: a broader concept this falls under, only if that concept is on the map or in this list. Otherwise null.
@@ -99,19 +100,22 @@ export function analyzerInput(
     .map(({ role, text }) => `${role}: ${quoted(text)}`)
     .join("\n");
 
-  const pendingNode = trail.pending
-    ? findById(trail.nodes, trail.pending.nodeId)
-    : undefined;
+  const pendingNode =
+    trail.pending && "nodeId" in trail.pending
+      ? findById(trail.nodes, trail.pending.nodeId)
+      : undefined;
   // A thrown image is always placed on the map, never taken as a reply.
   const pendingNote = message.hasImage
     ? "Nothing is pending."
-    : trail.pending?.kind === "recall" && pendingNode
-      ? `A recall check is pending on "${plainName(pendingNode.label)}". What they saw back then: ${quoted(
-          lastAnswerFor(trail, pendingNode.id) ?? pendingNode.summary,
-        )}`
-      : trail.pending?.kind === "revisit" && pendingNode
-        ? `A continue-or-review offer is pending on "${plainName(pendingNode.label)}".`
-        : "Nothing is pending.";
+    : trail.pending?.kind === "open"
+      ? `An opening question about their curiosity has already been delivered. Their interest: ${quoted(trail.pending.originalQuestion)}. Named topics: ${trail.pending.topicLabels.map((label) => `"${plainName(label)}"`).join(", ") || "(none)"}. If they give no narrower preference or ask to begin, use start_learning and these topics. Do not ask them to narrow it again.`
+      : trail.pending?.kind === "recall" && pendingNode
+        ? `A recall check is pending on "${plainName(pendingNode.label)}". What they saw back then: ${quoted(
+            lastAnswerFor(trail, pendingNode.id) ?? pendingNode.summary,
+          )}`
+        : trail.pending?.kind === "revisit" && pendingNode
+          ? `A continue-or-review offer is pending on "${plainName(pendingNode.label)}".`
+          : "Nothing is pending.";
 
   return `Map:
 ${describeMap(trail)}
@@ -130,7 +134,8 @@ ${message.text ? quoted(message.text) : "(no text)"}`;
 const REPLY_RULES = `You are Trailhead, a study companion for someone with ADHD who learns by following their curiosity. They ask whatever they want, in any order, and you go along with it.
 
 Always:
-- Start from their curiosity. Never lead with a curriculum, roadmap or table of contents, and never assign anything. A short, optional path comes later, built from what they have been asking: only when the instructions below call for it, or when they ask for one and have asked about something first. If they ask before that, ask what they are most curious about.
+- Start from their curiosity. A broad interest is enough to start explaining: they do not need to invent a precise question first. An overview or the relationship between topics they named is welcome. Never lead with a curriculum, roadmap or table of contents, and never assign anything. A short, optional path comes later, built from what they have been asking: only when the instructions below call for it, or when they ask for one and have asked about something first.
+- Give useful content rather than repeated praise. Do not routinely end with a question, offer to explain, or ask what interests them most. Ask only when the turn instructions call for it or an essential detail prevents an answer. "I don't know", "nothing specific" and "just explain" are enough to begin from the interest they already gave.
 - Never ask them to organise anything, review later or come back. Never mention streaks, scores or how focused they are. Wandering off topic is fine, and you never steer them back.
 - You help with learning. Say nothing about diagnosis, symptoms, treatment or their attention.
 - Keep it short: about 120 words or 400 Korean characters at most, or half again as much if this turn has several steps. One idea per paragraph. A concrete example beats a definition.
@@ -153,7 +158,10 @@ function planDirective(plan: TurnPlan, trail: TrailState): string {
 
   switch (plan.kind) {
     case "open":
-      return `They want to learn something broad and have not asked anything specific. Do not explain, outline or suggest topics. Reply in at most two sentences: be glad, and ask what they are most curious about (something like "What are you most curious about?", or in Korean "뭐가 제일 궁금해?").`;
+      return `They expressed a broad interest: ${quoted(plan.originalQuestion)}. Ask one short, low-pressure question about what brought them to it. They do not need technical vocabulary or a precise question. You may say that a big picture is fine if nothing specific comes to mind. At most two sentences, without praise, a curriculum or a list of topics. This clarification is offered only once.`;
+
+    case "start":
+      return `Start explaining their interest now: ${plan.topicLabels.map((topic) => `"${plainName(topic)}"`).join(", ") || "use the interest they expressed in the conversation"}. Give a small, useful introduction with one everyday example. If they named several topics, explain how those topics relate. Stay with the topics they brought; do not invent a narrower starting topic, learning sequence, roadmap or table of contents. Skip praise and readiness checks. Do not ask another preference question or end with a question. They can react to the explanation in their own way.`;
 
     case "answer":
       return plan.focusId

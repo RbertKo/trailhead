@@ -11,7 +11,13 @@ import {
   lastAnswerFor,
   normalizeLabel,
 } from "./engine";
-import { EMPTY_TRAIL, type TrailState, type TurnPlan } from "./types";
+import {
+  EMPTY_TRAIL,
+  MAX_LABEL,
+  trailStateSchema,
+  type TrailState,
+  type TurnPlan,
+} from "./types";
 
 const DAY = 24 * 60 * 60 * 1000;
 const START = 1_800_000_000_000;
@@ -95,6 +101,199 @@ function session(initial: TrailState = EMPTY_TRAIL, startAt = START) {
     },
   };
 }
+
+describe("starting from a broad interest", () => {
+  const wish = { ...asking("AI"), moment: "broad_wish" as const };
+  const start = (labels: string[]) =>
+    analysis({
+      moment: "start_learning",
+      focusLabel: labels[0] ?? null,
+      concepts: labels.map((label) => concept(label)),
+    });
+
+  it("records the one opening question only after it is delivered", () => {
+    const s = session();
+    const turn = s.startTurn(wish, "AI 공부하고 싶어");
+    expect(turn.plan.kind).toBe("open");
+    expect(s.trail.nodes).toEqual([]);
+    expect(s.trail.pending).toBeNull();
+
+    const delivered = completeTurn(s.trail, turn.plan, "계기가 있어?", {
+      now: START + 1000,
+      newId: () => "delivered",
+    });
+    expect(delivered.pending).toEqual({
+      kind: "open",
+      originalQuestion: "AI 공부하고 싶어",
+      topicLabels: ["AI"],
+    });
+
+    // Stopping before delivery leaves the learner free to try again.
+    expect(s.turn(wish, "AI 공부하고 싶어").kind).toBe("open");
+  });
+
+  it("starts on a repeated broad wish even if the reader still calls it broad", () => {
+    const s = session();
+    s.turn(wish, "AI 공부하고 싶어");
+    const plan = s.turn(
+      { ...start(["ML", "DL", "LLM"]), moment: "broad_wish" },
+      "ML/DL/LLM 분야를 전체적으로 파보고 싶어",
+    );
+
+    expect(plan).toMatchObject({
+      kind: "start",
+      topicLabels: ["ML", "DL", "LLM"],
+    });
+    expect(s.trail.nodes.map(({ label, state }) => [label, state])).toEqual([
+      ["ML", "seen"],
+      ["DL", "seen"],
+      ["LLM", "seen"],
+    ]);
+    expect(s.trail.pending).toBeNull();
+    expect(findByLabel(s.trail.nodes, "AI")).toBeUndefined();
+  });
+
+  it.each(["모르겠어", "그냥 딱 저 정도야", "없어. 이제 위 주제로 알려줘"])(
+    "uses the earlier interest for '%s', even when no concepts were read",
+    (text) => {
+      const s = session();
+      s.turn(wish, "AI 공부하고 싶어");
+      const { plan } = s.startTurn(start([]), text);
+      expect(plan).toMatchObject({ kind: "start", topicLabels: ["AI"] });
+      expect(s.node("AI").state).toBe("unseen");
+      expect(s.trail.pending?.kind).toBe("open");
+
+      const delivered = completeTurn(s.trail, plan, "AI의 큰 그림 설명", {
+        now: START + 2000,
+        newId: () => "answer",
+      });
+      expect(findByLabel(delivered.nodes, "AI")?.state).toBe("seen");
+      expect(delivered.pending).toBeNull();
+      expect(lastAnswerFor(delivered, s.node("AI").id)).toBe("AI의 큰 그림 설명");
+    },
+  );
+
+  it("explains a direct teaching request on the first turn", () => {
+    const s = session();
+    expect(s.turn(start(["AI"]), "AI가 뭔지 큰 그림부터 알려줘").kind).toBe(
+      "start",
+    );
+    expect(s.node("AI").state).toBe("seen");
+    expect(s.trail.pending).toBeNull();
+  });
+
+  it("still checks memory when a broad introduction is requested days later", () => {
+    const s = session();
+    s.turn(start(["AI"]), "AI 큰 그림부터 알려줘");
+    s.wait(4 * DAY);
+
+    expect(s.turn(start(["AI"]), "AI 큰 그림 다시 알려줘")).toMatchObject({
+      kind: "recall_ask",
+      nodeId: s.node("AI").id,
+      originalQuestion: "AI 큰 그림 다시 알려줘",
+    });
+    expect(s.trail.pending?.kind).toBe("recall");
+  });
+
+  it("does not add a second memory check when introducing another due topic", () => {
+    const s = session();
+    s.turn(start(["AI", "ML"]), "AI랑 ML 큰 그림부터 알려줘");
+    s.wait(4 * DAY);
+    expect(s.turn(start(["AI"]), "AI 다시 알려줘").kind).toBe("recall_ask");
+    s.turn(analysis({ moment: "other", recallVerdict: "solid" }), "기억한 설명");
+
+    expect(s.turn(start(["ML"]), "이번에는 ML 알려줘").kind).toBe("start");
+    expect(s.node("ML").state).toBe("seen");
+    expect(s.trail.pending).toBeNull();
+  });
+
+  it("keeps the latest interest when its introduction is stopped", () => {
+    const s = session();
+    s.turn(wish, "AI 공부하고 싶어");
+    s.startTurn(start(["ML", "DL", "LLM"]), "ML/DL/LLM 전체적으로 알려줘");
+    expect(s.trail.nodes.every((node) => node.state === "unseen")).toBe(true);
+    expect(
+      s.turn(analysis({ moment: "broad_wish" }), "그냥 위 주제로 알려줘"),
+    ).toMatchObject({ kind: "start", topicLabels: ["ML", "DL", "LLM"] });
+    expect(s.trail.nodes.every((node) => node.state === "seen")).toBe(true);
+    expect(s.trail.pending).toBeNull();
+  });
+
+  it("does not create prerequisite holes or a path for an introduction", () => {
+    const s = session();
+    const { plan, callout } = s.startTurn(
+      analysis({
+        moment: "start_learning",
+        concepts: [
+          concept("LLM", {
+            prerequisites: ["행렬"],
+            blockingPrerequisite: "행렬",
+          }),
+        ],
+        nextSteps: ["역전파", "경사하강법"],
+      }),
+      "LLM 전체적인 그림부터 알려줘",
+    );
+    expect(plan.kind).toBe("start");
+    expect(s.trail.nodes.map(({ label }) => label)).toEqual(["LLM"]);
+    expect(callout.nextSteps).toEqual([]);
+  });
+
+  it("lets small talk pass without forcing learning or repeating the opening", () => {
+    const s = session();
+    s.turn(wish, "AI 공부하고 싶어");
+    const opening = s.trail.pending;
+    expect(s.turn(analysis({ moment: "other" }), "안녕").kind).toBe("answer");
+    expect(s.trail.pending).toEqual(opening);
+    expect(s.trail.nodes).toEqual([]);
+    expect(s.turn(wish, "AI 공부하고 싶어").kind).toBe("start");
+  });
+
+  it("follows a different question or image instead of the earlier broad wish", () => {
+    for (const imageId of [null, "screenshot"]) {
+      const s = session();
+      s.turn(wish, "AI 공부하고 싶어");
+      expect(s.turn(asking("클로저"), "이건 뭐야?", imageId).kind).toBe(
+        "answer",
+      );
+      expect(s.node("클로저").state).toBe("seen");
+      expect(findByLabel(s.trail.nodes, "AI")).toBeUndefined();
+      expect(s.trail.pending).toBeNull();
+    }
+  });
+
+  it("keeps the opening context through an unusable analysis", () => {
+    const s = session();
+    s.turn(wish, "AI 공부하고 싶어");
+    const opening = s.trail.pending;
+    s.turn(null, "그냥 알려줘");
+    expect(s.trail.pending).toEqual(opening);
+    expect(s.trail.nodes).toEqual([]);
+    expect(s.turn(start([]), "그 주제로 알려줘")).toMatchObject({
+      kind: "start",
+      topicLabels: ["AI"],
+    });
+  });
+
+  it("keeps retained opening topics within the request limits", () => {
+    const s = session();
+    s.turn(
+      {
+        ...wish,
+        concepts: Array.from({ length: 5 }, (_, i) =>
+          concept(`${i}${"x".repeat(MAX_LABEL)}`),
+        ),
+      },
+      "x".repeat(3000),
+    );
+    expect(() => trailStateSchema.parse(s.trail)).not.toThrow();
+    if (s.trail.pending?.kind !== "open") throw new Error("Expected an opening");
+    expect(s.trail.pending.topicLabels).toHaveLength(3);
+    expect(
+      s.trail.pending.topicLabels.every((label) => label.length === MAX_LABEL),
+    ).toBe(true);
+  });
+});
 
 describe("the demo scenario", () => {
   it("runs from a broad wish through a hole, a recall failure and a re-teach", () => {

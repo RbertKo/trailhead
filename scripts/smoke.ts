@@ -9,7 +9,12 @@ import { metaApiClient, metaTextModel, metaTextOptions } from "@/lib/meta/client
 import { getMetaConfig, MissingApiKeyError } from "@/lib/meta/config";
 import { segmentImage } from "@/lib/meta/segment";
 import { analyzeTurn, userMessage } from "@/lib/trail/analyze";
-import { advanceTime, applyTurn, completeTurn } from "@/lib/trail/engine";
+import {
+  advanceTime,
+  applyTurn,
+  completeTurn,
+  type TurnResult,
+} from "@/lib/trail/engine";
 import { replySystem } from "@/lib/trail/prompts";
 import type { HistoryMessage, Locale } from "@/lib/trail/request";
 import { EMPTY_TRAIL, type TrailState } from "@/lib/trail/types";
@@ -50,19 +55,20 @@ async function checkStructuredOutput(): Promise<string> {
   });
 }
 
-async function checkReplyStream(): Promise<string> {
+async function readReply(
+  turn: TurnResult,
+  history: HistoryMessage[],
+  message: string,
+  locale: Locale,
+): Promise<{ text: string; chunks: number }> {
   let streamError: unknown;
-  const message = "What is gradient descent?";
-  const turn = applyTurn(
-    EMPTY_TRAIL,
-    { text: message, imageId: null },
-    null,
-    context(),
-  );
   const result = streamText({
     model: metaTextModel(),
-    system: replySystem(turn.plan, turn.trail, null, "en"),
-    messages: [userMessage(message)],
+    system: replySystem(turn.plan, turn.trail, null, locale, turn.callout.nextSteps),
+    messages: [
+      ...history.map(({ role, text }) => ({ role, content: text })),
+      userMessage(message),
+    ],
     maxOutputTokens: 2048,
     providerOptions: metaTextOptions({ reasoningEffort: "low" }),
     onError: ({ error }) => {
@@ -83,7 +89,19 @@ async function checkReplyStream(): Promise<string> {
   if (finishReason !== "stop") {
     throw new Error(`The reply finished with "${finishReason}", not "stop"`);
   }
-  return `${chunks} chunks: ${text.trim().slice(0, 80)}…`;
+  return { text: text.trim(), chunks };
+}
+
+async function checkReplyStream(): Promise<string> {
+  const message = "What is gradient descent?";
+  const turn = applyTurn(
+    EMPTY_TRAIL,
+    { text: message, imageId: null },
+    null,
+    context(),
+  );
+  const { text, chunks } = await readReply(turn, [], message, "en");
+  return `${chunks} chunks: ${text.slice(0, 80)}…`;
 }
 
 let dropped: { id: string; url: string } | undefined;
@@ -150,6 +168,96 @@ const DEMO_SCRIPTS: Record<
   },
 };
 
+const START_SCRIPTS: Record<
+  Locale,
+  {
+    scope: string;
+    noPreference: string;
+    direct: string;
+    justExplain: string;
+    oldQuestion: string;
+  }
+> = {
+  en: {
+    scope: "I want to understand ML, DL and LLMs as a whole",
+    noPreference: "I don't know",
+    direct: "Teach me AI, starting with the big picture",
+    justExplain: "Nothing else. Now explain the topics above",
+    oldQuestion: "What are you most curious about?",
+  },
+  ko: {
+    scope: "ML/DL/LLM 분야를 전체적으로 파보고 싶어",
+    noPreference: "모르겠어",
+    direct: "AI가 뭔지 큰 그림부터 알려줘",
+    justExplain: "없어. 이제 위 주제로 알려줘",
+    oldQuestion: "그 중에서 지금 제일 땡기는 건 뭐야?",
+  },
+};
+
+/** Replays the opening with real replies, including a refusal to narrow it. */
+async function checkLearningStart(locale: Locale): Promise<string> {
+  const { wish } = DEMO_SCRIPTS[locale];
+  const { scope, noPreference, direct, justExplain, oldQuestion } =
+    START_SCRIPTS[locale];
+  const read = async (trail: TrailState, history: HistoryMessage[], text: string) => {
+    const analysis = await analyzeTurn({
+      trail,
+      history,
+      message: { text, image: null },
+      locale,
+    });
+    if (!analysis) throw new Error(`No usable reading for: ${text}`);
+    return applyTurn(trail, { text, imageId: null }, analysis, context());
+  };
+
+  const opening = await read(EMPTY_TRAIL, [], wish);
+  if (opening.plan.kind !== "open") {
+    throw new Error("Expected one opening question");
+  }
+  const { text: openingReply } = await readReply(opening, [], wish, locale);
+  const waiting = completeTurn(opening.trail, opening.plan, openingReply, context());
+  const history: HistoryMessage[] = [
+    { role: "user", text: wish },
+    { role: "assistant", text: openingReply },
+  ];
+  // Existing chats have no stored opening yet. Recover the interest from the
+  // old repeated questions too, so the fix works without resetting the session.
+  const legacyHistory: HistoryMessage[] = [
+    ...history,
+    { role: "user", text: scope },
+    { role: "assistant", text: oldQuestion },
+    { role: "user", text: noPreference },
+    { role: "assistant", text: oldQuestion },
+  ];
+  const scenarios = [
+    { text: scope, trail: waiting, history },
+    { text: noPreference, trail: waiting, history },
+    { text: direct, trail: EMPTY_TRAIL, history: [] },
+    { text: justExplain, trail: EMPTY_TRAIL, history: legacyHistory },
+  ];
+
+  const replies: string[] = [];
+  for (const { text, trail, history: previous } of scenarios) {
+    const turn = await read(trail, previous, text);
+    if (turn.plan.kind !== "start") {
+      throw new Error(`"${text}" produced ${turn.plan.kind}, expected start`);
+    }
+    const { text: reply } = await readReply(turn, previous, text, locale);
+    if (/[?？]\s*$/.test(reply) || reply.length < 60) {
+      throw new Error(`Expected an explanation without a final question: ${reply}`);
+    }
+    const explained = completeTurn(turn.trail, turn.plan, reply, context());
+    if (!explained.nodes.some((node) => node.state === "seen")) {
+      throw new Error("The delivered explanation did not reach the map");
+    }
+    if (explained.pending !== null || turn.callout.nextSteps.length > 0) {
+      throw new Error("The introduction left a pending question or offered a path");
+    }
+    replies.push(`"${text}" -> start\n      ${reply.replace(/\n/g, " ")}`);
+  }
+  return replies.join("\n      ");
+}
+
 /** Runs the demo script through the same reading and engine the app uses. */
 async function checkDemoScript(locale: Locale): Promise<string> {
   const { wish, question, related, stumble } = DEMO_SCRIPTS[locale];
@@ -208,6 +316,8 @@ const checks: [name: string, run: () => Promise<string>][] = [
   ["SAM 3.1: segmenting a dropped image", checkSegmentation],
   ["Demo script in English", () => checkDemoScript("en")],
   ["Demo script in Korean", () => checkDemoScript("ko")],
+  ["Learning starts in English", () => checkLearningStart("en")],
+  ["Learning starts in Korean", () => checkLearningStart("ko")],
 ];
 
 async function main() {
