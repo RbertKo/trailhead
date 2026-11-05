@@ -63,6 +63,12 @@ const originalQuestion = z.string().max(MAX_TRACE_CONTENT);
 /** A question the assistant asked and is waiting on, carried to the next turn. */
 export const pendingSchema = z.discriminatedUnion("kind", [
   z.object({
+    kind: z.literal("open"),
+    /** Their broad interest, kept even when recent chat history moves on. */
+    originalQuestion,
+    topicLabels: z.array(z.string().min(1).max(MAX_LABEL)).max(3),
+  }),
+  z.object({
     kind: z.literal("recall"),
     nodeId: id,
     /** What the learner was asking when the check interrupted, to return to. */
@@ -107,8 +113,10 @@ export const EMPTY_TRAIL: TrailState = {
 
 /** What this turn does. Decided by the engine, carried out by the reply model. */
 export type TurnPlan =
-  /** A broad wish: no curriculum, only "what are you most curious about?". */
-  | { kind: "open" }
+  /** One optional clarification of a broad wish, recorded after delivery. */
+  | { kind: "open"; originalQuestion: string; topicLabels: string[] }
+  /** Begin with the named interest, without another preference question. */
+  | { kind: "start"; focusId: string | null; topicLabels: string[] }
   | { kind: "answer"; focusId: string | null }
   /** Fill exactly one missing prerequisite, then return to the question. */
   | {

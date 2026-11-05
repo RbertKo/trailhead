@@ -507,10 +507,52 @@ export function applyTurn(
     return finish({ kind: "answer", focusId: null }, before.pending);
   }
 
+  // A broad wish gets only one delivered clarification. Keep the named topics
+  // off the map until an explanation starts, but retain them for "just tell me".
+  const opening = pending?.kind === "open" ? pending : null;
+  const topicLabels = analysis.concepts
+    .slice(0, MAX_CONCEPTS_PER_TURN)
+    .map(({ label }) => label.trim().slice(0, MAX_LABEL))
+    .filter(Boolean);
+  const asksAboutImage = message.imageId !== null && message.text.trim() !== "";
+  if (analysis.moment === "broad_wish" && !message.imageId && !opening) {
+    return finish({ kind: "open", originalQuestion: question, topicLabels });
+  }
+  if (opening && analysis.moment === "other" && analysis.concepts.length === 0) {
+    // Small talk does not spend another clarification or force the topic back.
+    return finish({ kind: "answer", focusId: null }, opening);
+  }
+
+  const startsLearning =
+    !message.imageId &&
+    (analysis.moment === "start_learning" ||
+      (opening !== null && analysis.moment === "broad_wish"));
+  // Even an incomplete reading of an opening reply can use the earlier topics.
+  // They came from the learner, not a default curriculum chosen by the model.
+  const concepts =
+    startsLearning && analysis.concepts.length === 0 && opening
+      ? opening.topicLabels.map((label): ConceptAnalysis => ({
+          label,
+          summary: "",
+          parentLabel: null,
+          childLabels: [],
+          prerequisites: [],
+          blockingPrerequisite: null,
+        }))
+      : analysis.concepts;
   const previousTrace = before.traces.findLast(
     (trace) => trace.type === "question" || trace.type === "drop",
   );
-  const placed = placeConcepts(draft, analysis.concepts);
+  const placed = placeConcepts(
+    draft,
+    startsLearning
+      ? concepts.map((concept) => ({
+          ...concept,
+          prerequisites: [],
+          blockingPrerequisite: null,
+        }))
+      : concepts,
+  );
   placedLabels = placed.map(({ node }) => node.label);
   const focus =
     (analysis.focusLabel && findByLabel(draft.nodes, analysis.focusLabel)) ||
@@ -531,16 +573,27 @@ export function applyTurn(
     });
   }
 
-  // An image sent with a question needs its answer now: it won't be there on the
-  // next turn. So it is never put off, whatever else the message seems to be.
-  const asksAboutImage = message.imageId !== null && message.text.trim() !== "";
-
-  if (analysis.moment === "broad_wish" && !asksAboutImage) {
-    return finish({ kind: "open" });
+  if (startsLearning) {
+    const topics =
+      topicLabels.length > 0 ? topicLabels : opening?.topicLabels ?? [];
+    return finish(
+      { kind: "start", focusId: focus?.id ?? null, topicLabels: topics },
+      // If the explanation is stopped, retain the fact that we already asked,
+      // together with any more recent topic the learner chose.
+      opening
+        ? {
+            kind: "open",
+            originalQuestion:
+              topicLabels.length > 0 ? question : opening.originalQuestion,
+            topicLabels: topics,
+          }
+        : null,
+    );
   }
 
   // Finishing a topic is a natural moment to test the oldest thing. If nothing is
   // due, "what's next?" gets a short path, because that is what they asked for.
+  // A question about an attached image is answered now: the image is not resent.
   if (analysis.moment === "wrapping_up" && !asksAboutImage) {
     const overdue = pickRecall(oldestFirst(draft.nodes), before, now);
     if (overdue) return askRecall(overdue, null);
@@ -659,7 +712,9 @@ export function completeTurn(
       addAnswer([plan.gapId, plan.focusId, ...asked]);
       break;
     }
+    case "start":
     case "answer":
+      if (plan.kind === "start") pending = null;
       if (plan.focusId) {
         meetAll(asked);
         addAnswer([plan.focusId, ...asked]);
@@ -707,6 +762,12 @@ export function completeTurn(
       };
       break;
     case "open":
+      pending = {
+        kind: "open",
+        originalQuestion: plan.originalQuestion,
+        topicLabels: plan.topicLabels,
+      };
+      break;
     case "wander":
       break;
   }
@@ -717,6 +778,7 @@ export function completeTurn(
 /** The concept a turn left off on, for the "you are here" marker. */
 function planFocusId(plan: TurnPlan): string | null {
   switch (plan.kind) {
+    case "start":
     case "answer":
     case "gap":
       return plan.focusId;
@@ -750,7 +812,7 @@ function describePlan(
           ? plan.nodeId
           : null;
   const focusId =
-    plan.kind === "gap" || plan.kind === "answer"
+    plan.kind === "gap" || plan.kind === "answer" || plan.kind === "start"
       ? plan.focusId
       : plan.kind === "recall_result"
         ? plan.returnToId
