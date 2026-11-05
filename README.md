@@ -124,8 +124,8 @@ language you write in, so the whole flow works in either.
 Built for a three-minute demo, deliberately. There are no learner accounts: one email and
 password, set on the server, keep strangers from spending the API credits. A learning
 session lives in the browser tab and ends when you reload it, so nothing about a learner
-is stored on the server. Dropped images are sent to the Meta Model API with the turn they were dropped in,
-and later turns carry only the text description.
+is stored on the server. Dropped images are sent to the Meta Model API with the turn they
+were dropped in, and later turns carry only the text description.
 
 ## Scripts
 
