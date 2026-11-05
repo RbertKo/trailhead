@@ -59,7 +59,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 - **응답이 비거나 JSON이 깨지면 지도 변경 없이 대화를 잇는다.** `NoObjectGeneratedError`와 `NoOutputGeneratedError` 모두 해당한다. 키·결제·호출 제한 오류는 답변도 실패하므로 그대로 오류로 보여준다.
 - **Vercel 함수 본문 제한은 4.5MB다.** 그래서 브라우저에서 이미지를 줄여 보낸다(`lib/trail/image.ts`).
 - **모델 답변의 이미지와 링크는 글자로만 보여준다.** 스크린샷 속 글자로 모델을 속이면 대화 내용이 담긴 주소를 불러오게 만들 수 있다(`components/trail/reply-text.tsx`). 프롬프트에 넣는 지도 내용은 `quoted()`와 `plainName()`을 거친다.
-- **새 `/api` 경로는 `proxy.ts`의 호출 제한을 자동으로 적용받는다.** 본문 크기 상한은 `parseJsonBody`로 경로마다 정한다. 요청 본문은 곧 과금되는 입력 토큰이다.
+- **새 `/api` 경로는 `proxy.ts`의 호출 제한을 자동으로 적용받는다.** IP별 분당 상한과, 공개 데모의 크레딧을 지키는 하루 전체 상한이 있다. 둘 다 프로세스 메모리에서 세므로 재시작하면 초기화된다. 본문 크기 상한은 `parseJsonBody`로 경로마다 정한다. 요청 본문은 곧 과금되는 입력 토큰이다.
 
 ## 작업 전후 확인
 
