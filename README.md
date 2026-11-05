@@ -162,11 +162,30 @@ lib/
   guard/              Rate limiter
 proxy.ts              Applies the rate limit to every /api route
 scripts/smoke.ts      End-to-end check and demo rehearsal against the real API
+Dockerfile            The app's container image
+compose.yaml          The public demo: the app and its own Tailscale node
+deploy/tailscale/     What that Tailscale node makes public
 ```
 
 ## Configuration
 
 See [`.env.example`](.env.example). The API key is read on the server only.
+
+## Deploying
+
+The public demo runs in containers ([`compose.yaml`](compose.yaml)). The app has a
+read-only filesystem, runs without root and drops every capability. It shares the
+network of its own Tailscale node, which makes only the app public through Funnel, so
+the machine underneath stays private.
+
+```bash
+cp .env.example .env.local      # then set MODEL_API_KEY
+docker compose up -d --build
+docker compose logs tailscale   # the first start prints a login link
+```
+
+The key is passed in when the container starts and never goes into the image. To update
+the app and leave the node alone, run `git pull && docker compose up -d --build web`.
 
 ## Built during the hackathon
 
