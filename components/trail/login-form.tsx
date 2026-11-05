@@ -75,7 +75,12 @@ export function LoginForm() {
           <p className="mt-1 text-xs text-muted-foreground">{copy.tagline}</p>
         </header>
 
-        <form className="grid gap-4" onSubmit={(event) => void signIn(event)}>
+        {/* POST for a submit that beats hydration: a GET would put the password in the URL. */}
+        <form
+          method="post"
+          className="grid gap-4"
+          onSubmit={(event) => void signIn(event)}
+        >
           <div className="grid gap-1.5">
             <label htmlFor="email" className="text-sm font-medium">
               {copy.emailLabel}

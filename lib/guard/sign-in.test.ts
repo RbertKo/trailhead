@@ -1,8 +1,11 @@
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { NextRequest } from "next/server";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/login/route";
+import { LoginForm } from "@/components/trail/login-form";
 import { config, proxy } from "@/proxy";
 
 import {
@@ -157,6 +160,14 @@ describe("proxy", () => {
     "/icon.svg?abc123",
   ])("leaves %s alone, because the sign-in page needs it", (url) => {
     expect(unstable_doesMiddlewareMatch({ config, url })).toBe(false);
+  });
+});
+
+describe("the sign-in form", () => {
+  it("never submits with GET, which would put the password in the URL", () => {
+    const html = renderToStaticMarkup(createElement(LoginForm));
+
+    expect(html).toMatch(/<form[^>]*method="post"/);
   });
 });
 
