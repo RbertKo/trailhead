@@ -69,4 +69,4 @@ npm run typecheck && npm run lint && npm run test && npm run build
 npm run smoke   # 실제 API 호출과 데모 리허설. 실행당 약 $0.10이 든다.
 ```
 
-개발 서버는 `localhost`로 접속한다. `127.0.0.1`은 Next 16이 교차 출처로 막아 화면은 보이지만 동작하지 않는다.
+개발 서버는 `localhost`로 접속한다. `127.0.0.1`은 Next 16이 교차 출처로 막아 화면은 보이지만 동작하지 않는다. 앱 화면은 `.env.local`의 `AUTH_EMAIL`·`AUTH_PASSWORD`로 로그인해야 보인다.
