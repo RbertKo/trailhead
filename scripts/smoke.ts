@@ -1,7 +1,7 @@
 // Checks the real Meta Model API with the code paths the app uses, then rehearses
 // the demo against it:
 //   npm run smoke
-// It spends a little real money (about $0.05 per run). Run it before recording.
+// It spends a little real money (about $0.10 per run). Run it before recording.
 import { streamText } from "ai";
 
 import { toApiError } from "@/lib/api/errors";
@@ -11,7 +11,7 @@ import { segmentImage } from "@/lib/meta/segment";
 import { analyzeTurn, userMessage } from "@/lib/trail/analyze";
 import { advanceTime, applyTurn, completeTurn } from "@/lib/trail/engine";
 import { replySystem } from "@/lib/trail/prompts";
-import type { HistoryMessage } from "@/lib/trail/request";
+import type { HistoryMessage, Locale } from "@/lib/trail/request";
 import { EMPTY_TRAIL, type TrailState } from "@/lib/trail/types";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -35,8 +35,8 @@ async function checkStructuredOutput(): Promise<string> {
   const analysis = await analyzeTurn({
     trail: EMPTY_TRAIL,
     history: [],
-    message: { text: "역전파 설명해줘", image: null },
-    locale: "ko",
+    message: { text: "Explain backpropagation", image: null },
+    locale: "en",
   });
   if (!analysis) throw new Error("No usable structured output");
   if (analysis.concepts.length === 0) throw new Error("No concepts returned");
@@ -52,7 +52,7 @@ async function checkStructuredOutput(): Promise<string> {
 
 async function checkReplyStream(): Promise<string> {
   let streamError: unknown;
-  const message = "경사하강법이 뭐야?";
+  const message = "What is gradient descent?";
   const turn = applyTurn(
     EMPTY_TRAIL,
     { text: message, imageId: null },
@@ -61,7 +61,7 @@ async function checkReplyStream(): Promise<string> {
   );
   const result = streamText({
     model: metaTextModel(),
-    system: replySystem(turn.plan, turn.trail, null, "ko"),
+    system: replySystem(turn.plan, turn.trail, null, "en"),
     messages: [userMessage(message)],
     maxOutputTokens: 2048,
     providerOptions: metaTextOptions({ reasoningEffort: "low" }),
@@ -112,7 +112,7 @@ async function checkDropReading(): Promise<string> {
     trail: EMPTY_TRAIL,
     history: [],
     message: { text: "", image: dropped },
-    locale: "ko",
+    locale: "en",
   });
   if (!analysis?.imageDescription) throw new Error("The image was not read");
   if (analysis.concepts.length === 0) throw new Error("Nothing to place");
@@ -132,8 +132,27 @@ async function checkSegmentation(): Promise<string> {
   return `${objects.length} region(s) found. Zero is valid, and the app carries on without one.`;
 }
 
+const DEMO_SCRIPTS: Record<
+  Locale,
+  { wish: string; question: string; related: string; stumble: string }
+> = {
+  en: {
+    wish: "I want to learn AI",
+    question: "Explain backpropagation",
+    related: "How do you train a CNN?",
+    stumble: "Hmm... what was it? I can't really remember",
+  },
+  ko: {
+    wish: "AI 공부하고 싶어",
+    question: "역전파 설명해줘",
+    related: "CNN은 어떻게 학습시켜?",
+    stumble: "음... 뭐였더라. 잘 기억 안 나",
+  },
+};
+
 /** Runs the demo script through the same reading and engine the app uses. */
-async function checkDemoScript(): Promise<string> {
+async function checkDemoScript(locale: Locale): Promise<string> {
+  const { wish, question, related, stumble } = DEMO_SCRIPTS[locale];
   let trail: TrailState = EMPTY_TRAIL;
   const history: HistoryMessage[] = [];
 
@@ -142,7 +161,7 @@ async function checkDemoScript(): Promise<string> {
       trail,
       history,
       message: { text, image: null },
-      locale: "ko",
+      locale,
     });
     if (!analysis) throw new Error(`No usable reading for: ${text}`);
     const turn = applyTurn(trail, { text, imageId: null }, analysis, context());
@@ -161,10 +180,8 @@ async function checkDemoScript(): Promise<string> {
     }
   };
 
-  const wish = "AI 공부하고 싶어";
   expect(wish, (await say(wish)).plan.kind, "open");
 
-  const question = "역전파 설명해줘";
   const gap = await say(question);
   expect(question, gap.plan.kind, "gap");
   steps.push(`  hole: ${gap.callout.nodeLabel}, back to: ${gap.callout.focusLabel}`);
@@ -172,12 +189,10 @@ async function checkDemoScript(): Promise<string> {
   trail = advanceTime(trail, 7 * DAY, Date.now());
   steps.push("(7 days pass)");
 
-  const related = "CNN은 어떻게 학습시켜?";
   const recall = await say(related);
   expect(related, recall.plan.kind, "recall_ask");
   steps.push(`  testing: ${recall.callout.nodeLabel}`);
 
-  const stumble = "음... 뭐였더라. 잘 기억 안 나";
   const graded = await say(stumble);
   expect(stumble, graded.plan.kind, "recall_result");
   expect(stumble, graded.callout.verdict ?? "none", "fuzzy");
@@ -191,7 +206,8 @@ const checks: [name: string, run: () => Promise<string>][] = [
   ["Muse Spark: streaming reply", checkReplyStream],
   ["Muse Spark: reading a dropped image", checkDropReading],
   ["SAM 3.1: segmenting a dropped image", checkSegmentation],
-  ["Demo script: hole, then recall failure", checkDemoScript],
+  ["Demo script in English", () => checkDemoScript("en")],
+  ["Demo script in Korean", () => checkDemoScript("ko")],
 ];
 
 async function main() {

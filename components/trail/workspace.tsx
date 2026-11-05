@@ -66,7 +66,7 @@ const transport = new DefaultChatTransport<TrailUIMessage>({
 });
 
 export function Workspace() {
-  const [locale, setLocale] = useState<Locale>("ko");
+  const [locale, setLocale] = useState<Locale>("en");
   const copy = COPY[locale];
 
   // The whole session lives in this component: nothing is stored on the server.
@@ -269,9 +269,9 @@ export function Workspace() {
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => setLocale(locale === "ko" ? "en" : "ko")}
+            onClick={() => setLocale(locale === "en" ? "ko" : "en")}
           >
-            {COPY[locale === "ko" ? "en" : "ko"].languageName}
+            {COPY[locale === "en" ? "ko" : "en"].languageName}
           </Button>
         </header>
 

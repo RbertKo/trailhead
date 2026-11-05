@@ -96,24 +96,23 @@ npm run dev
 Open <http://localhost:3000>. Use `localhost`: the dev server doesn't serve its scripts
 to `127.0.0.1`, and the page then looks fine but does nothing.
 
-`npm run smoke` calls the real API and costs about $0.05 per run.
+`npm run smoke` calls the real API and costs about $0.10 per run.
 
 ## Try the demo flow
 
-1. Say `AI 공부하고 싶어` ("I want to study AI"). No curriculum, just "what's most
-   interesting?".
+1. Say `I want to learn AI`. No curriculum, just "what are you most curious about?".
 2. Ask a question or two, and drop a screenshot. The trail grows on the right, and after
    a few questions a short suggested path appears under the reply.
-3. Ask `역전파 설명해줘` ("explain backpropagation"). A hole appears for what it rests on,
-   such as the chain rule. Only that piece gets explained, then the reply returns to
-   backpropagation, and the other holes stay on the map.
+3. Ask `Explain backpropagation`. A hole appears for what it rests on, such as the chain
+   rule. Only that piece gets explained, then the reply returns to backpropagation, and
+   the other holes stay on the map.
 4. Press **+7d** to simulate a week passing, then ask something related, such as
-   `CNN은 어떻게 학습시켜?` ("how do you train a CNN?"). It tests your memory first. Stumble,
-   and the concept turns fuzzy, gets re-taught, and the conversation goes back to your
-   question.
+   `How do you train a CNN?`. It tests your memory first. Stumble, and the concept turns
+   fuzzy, gets re-taught, and the conversation goes back to your question.
 
 The time buttons exist for this demo, so the passing of days can be shown in minutes.
-The app works in Korean and English, and replies follow the language you write in.
+The interface is in English, with a switch to Korean at the top. Replies follow the
+language you write in, so the whole flow works in either.
 
 ## Scope
 
@@ -153,7 +152,7 @@ lib/
     layout.ts         Where each concept sits on the map
     image.ts          Shrinking dropped images in the browser
     request.ts        What the browser sends for each turn
-    copy.ts           Korean and English interface text
+    copy.ts           English and Korean interface text
   meta/               Meta Model API configuration, clients and SAM parsing
   api/                Request parsing and error mapping
   guard/              Rate limiter
