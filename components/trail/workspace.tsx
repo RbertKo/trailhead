@@ -11,6 +11,7 @@ import {
   useState,
   type DragEvent,
 } from "react";
+import { flushSync } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { COPY } from "@/lib/trail/copy";
@@ -29,6 +30,7 @@ import {
 import type { Session } from "@/lib/trail/session";
 import {
   clearSession,
+  loadSavedAt,
   loadSession,
   saveSession,
 } from "@/lib/trail/session-store";
@@ -87,7 +89,9 @@ export function Workspace() {
 
   // `off`: this browser can't store anything, so the trail lasts until a reload.
   const [storage, setStorage] = useState<"loading" | "on" | "off">("loading");
-  const savedImagesRef = useRef(images);
+  // When the stored session this tab is built on was saved.
+  const savedAtRef = useRef(0);
+  const restoringRef = useRef(false);
   const [confirmingStartOver, setConfirmingStartOver] = useState(false);
 
   const [input, setInput] = useState("");
@@ -159,18 +163,25 @@ export function Workspace() {
       setNotice(copy.saveFailed);
       return;
     }
-    if (session) {
-      setMessages(session.messages);
-      updateTrail(session.trail);
-      trailBeforeTurnRef.current = session.trail;
-      imagesRef.current = session.images;
-      savedImagesRef.current = session.images;
-      setImages(session.images);
-      setRegions(session.regions);
-      setLocale(session.locale);
-      setElapsedDays(session.elapsedDays);
-    }
-    setStorage("on");
+    // One commit, flagged: what was just read shouldn't be written straight back,
+    // or it would look new to every other tab.
+    restoringRef.current = true;
+    flushSync(() => {
+      if (session) {
+        savedAtRef.current = session.savedAt;
+        setMessages(session.messages);
+        clearError();
+        updateTrail(session.trail);
+        trailBeforeTurnRef.current = session.trail;
+        imagesRef.current = session.images;
+        setImages(session.images);
+        setRegions(session.regions);
+        setLocale(session.locale);
+        setElapsedDays(session.elapsedDays);
+      }
+      setStorage("on");
+    });
+    restoringRef.current = false;
   });
 
   useEffect(() => {
@@ -193,19 +204,18 @@ export function Workspace() {
 
   // Only between turns, so a turn cut off by a reload never comes back half done.
   useEffect(() => {
-    if (storage !== "on" || status !== "ready") return;
-    const changedImages = Object.values(images).filter(
-      (image) => savedImagesRef.current[image.id] !== image,
-    );
-    savedImagesRef.current = images;
-    saveSession(
-      { trail, messages, regions, locale, elapsedDays },
-      changedImages,
-    ).catch(() => {
-      // Nothing can be assumed to have landed, so the next save writes them all.
-      savedImagesRef.current = {};
-      setNotice(copy.saveFailed);
-    });
+    if (storage !== "on" || status !== "ready" || restoringRef.current) return;
+    const savedAt = Date.now();
+    savedAtRef.current = savedAt;
+    saveSession({
+      trail,
+      messages,
+      images,
+      regions,
+      locale,
+      elapsedDays,
+      savedAt,
+    }).catch(() => setNotice(copy.saveFailed));
   }, [storage, status, trail, messages, images, regions, locale, elapsedDays, copy]);
 
   function startOver() {
@@ -216,7 +226,6 @@ export function Workspace() {
     updateTrail(EMPTY_TRAIL);
     trailBeforeTurnRef.current = EMPTY_TRAIL;
     imagesRef.current = {};
-    savedImagesRef.current = {};
     setImages({});
     setRegions({});
     setElapsedDays(0);
@@ -229,6 +238,28 @@ export function Workspace() {
   useEffect(() => {
     latestRef.current = { input, attached, isBusy };
   });
+
+  // Another tab may have moved on while this one sat open, and saving from here
+  // without catching up first would silently undo that.
+  useEffect(() => {
+    if (storage !== "on") return;
+    async function catchUp() {
+      if (document.visibilityState !== "visible" || latestRef.current.isBusy) {
+        return;
+      }
+      const savedAt = await loadSavedAt();
+      if (savedAt === null || savedAt <= savedAtRef.current) return;
+      const session = await loadSession();
+      if (session && !latestRef.current.isBusy) finishLoading(session);
+    }
+    const listener = () => void catchUp().catch(() => {});
+    window.addEventListener("focus", listener);
+    document.addEventListener("visibilitychange", listener);
+    return () => {
+      window.removeEventListener("focus", listener);
+      document.removeEventListener("visibilitychange", listener);
+    };
+  }, [storage]);
 
   function requestOptions() {
     return { body: { trail: trailRef.current, locale } };

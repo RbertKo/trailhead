@@ -21,10 +21,13 @@ export interface Session {
   regions: Record<string, DropRegion>;
   locale: Locale;
   elapsedDays: number;
+  /** Lets a tab that sat open notice another tab has moved on since. */
+  savedAt: number;
 }
 
 const storedSessionSchema = z.object({
   version: z.literal(SESSION_VERSION),
+  savedAt: z.number(),
   trail: trailStateSchema,
   messages: z.array(
     z.looseObject({
@@ -63,10 +66,14 @@ const storedImageSchema = droppedImageSchema.extend({
  * Images are stored on their own, so saving a turn doesn't rewrite every image
  * the learner has ever thrown in. Messages keep only a reference to theirs.
  */
-export function toStoredSession(session: Omit<Session, "images">) {
+export function toStoredSession(session: Session) {
   return {
     version: SESSION_VERSION,
-    ...session,
+    savedAt: session.savedAt,
+    trail: session.trail,
+    regions: session.regions,
+    locale: session.locale,
+    elapsedDays: session.elapsedDays,
     messages: session.messages.map((message) => ({
       ...message,
       parts: message.parts.map((part) =>
@@ -74,6 +81,20 @@ export function toStoredSession(session: Omit<Session, "images">) {
       ),
     })),
   };
+}
+
+/**
+ * New or changed images, and any the store no longer has: another tab may have
+ * erased them, or an earlier save may have failed.
+ */
+export function imagesToWrite(
+  images: Record<string, DroppedImage>,
+  storedIds: Set<unknown>,
+  committed: WeakSet<DroppedImage>,
+): DroppedImage[] {
+  return Object.values(images).filter(
+    (image) => !committed.has(image) || !storedIds.has(image.id),
+  );
 }
 
 function withImage(
@@ -111,8 +132,9 @@ export function restoreSession(
     }),
   ) as Record<string, DroppedImage>;
 
-  const { trail, messages, regions, locale, elapsedDays } = stored.data;
+  const { savedAt, trail, messages, regions, locale, elapsedDays } = stored.data;
   return {
+    savedAt,
     // Time really has passed since this was saved, so the map shows it on arrival.
     trail: fadeStaleNodes(trail, now),
     messages: (messages as unknown as TrailUIMessage[])

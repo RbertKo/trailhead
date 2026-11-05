@@ -1,5 +1,10 @@
 import type { DroppedImage } from "./image";
-import { restoreSession, toStoredSession, type Session } from "./session";
+import {
+  imagesToWrite,
+  restoreSession,
+  toStoredSession,
+  type Session,
+} from "./session";
 
 const DATABASE = "trailhead";
 const SESSIONS = "sessions";
@@ -53,6 +58,9 @@ function askToKeep() {
   void navigator.storage?.persist?.().catch(() => {});
 }
 
+/** Images known to be stored. Marked only once their transaction has committed. */
+const committed = new WeakSet<DroppedImage>();
+
 /** Rejects when this browser has no usable storage. */
 export async function loadSession(): Promise<Session | null> {
   const db = await openDatabase();
@@ -61,21 +69,42 @@ export async function loadSession(): Promise<Session | null> {
     result(transaction.objectStore(SESSIONS).get(CURRENT)),
     result(transaction.objectStore(IMAGES).getAll()),
   ]);
-  return restoreSession(record, images, Date.now());
+  const session = restoreSession(record, images, Date.now());
+  for (const image of Object.values(session?.images ?? {})) {
+    committed.add(image);
+  }
+  return session;
 }
 
-/** Writes the session along with only the images that are new or have changed. */
-export async function saveSession(
-  session: Omit<Session, "images">,
-  changedImages: DroppedImage[],
-): Promise<void> {
+/** When the stored session was saved, without reading every image. */
+export async function loadSavedAt(): Promise<number | null> {
+  const db = await openDatabase();
+  const record: { savedAt?: number } | undefined = await result(
+    db.transaction(SESSIONS).objectStore(SESSIONS).get(CURRENT),
+  );
+  return record?.savedAt ?? null;
+}
+
+/**
+ * The record and its images land together or not at all, so a stored session
+ * never points at an image that failed to save.
+ */
+export async function saveSession(session: Session): Promise<void> {
   const db = await openDatabase();
   const transaction = db.transaction([SESSIONS, IMAGES], "readwrite");
-  for (const image of changedImages) {
-    transaction.objectStore(IMAGES).put(image);
-  }
-  transaction.objectStore(SESSIONS).put(toStoredSession(session), CURRENT);
+  const images = transaction.objectStore(IMAGES);
+  const storedIds = images.getAllKeys();
+  storedIds.onsuccess = () => {
+    const changed = imagesToWrite(
+      session.images,
+      new Set(storedIds.result),
+      committed,
+    );
+    for (const image of changed) images.put(image);
+    transaction.objectStore(SESSIONS).put(toStoredSession(session), CURRENT);
+  };
   await finished(transaction);
+  for (const image of Object.values(session.images)) committed.add(image);
   if (session.messages.length > 0) askToKeep();
 }
 
