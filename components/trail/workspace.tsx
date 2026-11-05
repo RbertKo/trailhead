@@ -11,6 +11,7 @@ import {
   useState,
   type DragEvent,
 } from "react";
+import { flushSync } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { COPY } from "@/lib/trail/copy";
@@ -26,6 +27,13 @@ import {
   type Locale,
   type TrailUIMessage,
 } from "@/lib/trail/request";
+import type { Session } from "@/lib/trail/session";
+import {
+  clearSession,
+  loadSavedAt,
+  loadSession,
+  saveSession,
+} from "@/lib/trail/session-store";
 import {
   EMPTY_TRAIL,
   type DropRegion,
@@ -37,6 +45,7 @@ import { Composer } from "./composer";
 import { MapPane } from "./map-pane";
 
 const DAY = 24 * 60 * 60 * 1000;
+const LOAD_TIMEOUT = 5_000;
 
 /** The region is an enhancement: if it can't be found, the turn stands as it is. */
 async function findRegion(image: DroppedImage, concept: string) {
@@ -69,7 +78,7 @@ export function Workspace() {
   const [locale, setLocale] = useState<Locale>("en");
   const copy = COPY[locale];
 
-  // The whole session lives in this component: nothing is stored on the server.
+  // The session lives here and in this browser's storage, never on the server.
   const [trail, setTrail] = useState<TrailState>(EMPTY_TRAIL);
   const trailRef = useRef(trail);
   const [clock, setClock] = useState(0);
@@ -77,6 +86,13 @@ export function Workspace() {
   const [images, setImages] = useState<Record<string, DroppedImage>>({});
   const imagesRef = useRef(images);
   const [regions, setRegions] = useState<Record<string, DropRegion>>({});
+
+  // `off`: this browser can't store anything, so the trail lasts until a reload.
+  const [storage, setStorage] = useState<"loading" | "on" | "off">("loading");
+  // When the stored session this tab is built on was saved.
+  const savedAtRef = useRef(0);
+  const restoringRef = useRef(false);
+  const [confirmingStartOver, setConfirmingStartOver] = useState(false);
 
   const [input, setInput] = useState("");
   const [attached, setAttached] = useState<DroppedImage | null>(null);
@@ -105,33 +121,145 @@ export function Workspace() {
     async (image: DroppedImage, concept: string) => {
       const region = await findRegion(image, concept);
       if (!region || !isUsefulRegion(image, region)) return;
+      // The learner may have erased the trail while this was searching.
+      if (!imagesRef.current[image.id]) return;
       setRegions((current) => ({ ...current, [image.id]: region }));
       const thumbnail = await cropRegionThumbnail(image, region);
-      if (thumbnail) rememberImage({ ...image, thumbnail });
+      if (thumbnail && imagesRef.current[image.id]) {
+        rememberImage({ ...image, thumbnail });
+      }
     },
     [rememberImage],
   );
 
-  const { messages, sendMessage, regenerate, status, stop, error } =
-    useChat<TrailUIMessage>({
-      transport,
-      onData: (part) => {
-        if (part.type === "data-trail") updateTrail(part.data);
-        if (part.type === "data-callout") {
-          const image = sentImageRef.current;
-          if (image && part.data.keyRegion) {
-            void showRegion(image, part.data.keyRegion);
-          }
+  const {
+    messages,
+    setMessages,
+    sendMessage,
+    regenerate,
+    status,
+    stop,
+    error,
+    clearError,
+  } = useChat<TrailUIMessage>({
+    transport,
+    onData: (part) => {
+      if (part.type === "data-trail") updateTrail(part.data);
+      if (part.type === "data-callout") {
+        const image = sentImageRef.current;
+        if (image && part.data.keyRegion) {
+          void showRegion(image, part.data.keyRegion);
         }
-      },
+      }
+    },
+  });
+  const isBusy =
+    status === "submitted" || status === "streaming" || storage === "loading";
+
+  const finishLoading = useEffectEvent((session: Session | null | "failed") => {
+    if (session === "failed") {
+      // Saving now could overwrite a trail that is still there but unreadable.
+      setStorage("off");
+      setNotice(copy.saveFailed);
+      return;
+    }
+    // One commit, flagged: what was just read shouldn't be written straight back,
+    // or it would look new to every other tab.
+    restoringRef.current = true;
+    flushSync(() => {
+      if (session) {
+        savedAtRef.current = session.savedAt;
+        setMessages(session.messages);
+        clearError();
+        updateTrail(session.trail);
+        trailBeforeTurnRef.current = session.trail;
+        imagesRef.current = session.images;
+        setImages(session.images);
+        setRegions(session.regions);
+        setLocale(session.locale);
+        setElapsedDays(session.elapsedDays);
+      }
+      setStorage("on");
     });
-  const isBusy = status === "submitted" || status === "streaming";
+    restoringRef.current = false;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Timed out")), LOAD_TIMEOUT);
+    });
+    Promise.race([loadSession(), timeout]).then(
+      (session) => {
+        if (!cancelled) finishLoading(session);
+      },
+      () => {
+        if (!cancelled) finishLoading("failed");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Only between turns, so a turn cut off by a reload never comes back half done.
+  useEffect(() => {
+    if (storage !== "on" || status !== "ready" || restoringRef.current) return;
+    const savedAt = Date.now();
+    savedAtRef.current = savedAt;
+    saveSession({
+      trail,
+      messages,
+      images,
+      regions,
+      locale,
+      elapsedDays,
+      savedAt,
+    }).catch(() => setNotice(copy.saveFailed));
+  }, [storage, status, trail, messages, images, regions, locale, elapsedDays, copy]);
+
+  function startOver() {
+    setConfirmingStartOver(false);
+    clearSession().catch(() => setNotice(copy.saveFailed));
+    setMessages([]);
+    clearError();
+    updateTrail(EMPTY_TRAIL);
+    trailBeforeTurnRef.current = EMPTY_TRAIL;
+    imagesRef.current = {};
+    setImages({});
+    setRegions({});
+    setElapsedDays(0);
+    setSelectedId(null);
+    setNotice(null);
+  }
 
   // Decoding an image takes a moment, and the learner may type or send meanwhile.
   const latestRef = useRef({ input, attached, isBusy });
   useEffect(() => {
     latestRef.current = { input, attached, isBusy };
   });
+
+  // Another tab may have moved on while this one sat open, and saving from here
+  // without catching up first would silently undo that.
+  useEffect(() => {
+    if (storage !== "on") return;
+    async function catchUp() {
+      if (document.visibilityState !== "visible" || latestRef.current.isBusy) {
+        return;
+      }
+      const savedAt = await loadSavedAt();
+      if (savedAt === null || savedAt <= savedAtRef.current) return;
+      const session = await loadSession();
+      if (session && !latestRef.current.isBusy) finishLoading(session);
+    }
+    const listener = () => void catchUp().catch(() => {});
+    window.addEventListener("focus", listener);
+    document.addEventListener("visibilitychange", listener);
+    return () => {
+      window.removeEventListener("focus", listener);
+      document.removeEventListener("visibilitychange", listener);
+    };
+  }, [storage]);
 
   function requestOptions() {
     return { body: { trail: trailRef.current, locale } };
@@ -252,7 +380,9 @@ export function Workspace() {
 
   return (
     <div
-      className="relative grid h-dvh grid-rows-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:grid-rows-1"
+      className={`relative grid h-dvh grid-rows-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:grid-rows-1 ${
+        storage === "loading" ? "invisible" : ""
+      }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -266,13 +396,31 @@ export function Workspace() {
             </h1>
             <p className="text-xs text-muted-foreground">{copy.tagline}</p>
           </div>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setLocale(locale === "en" ? "ko" : "en")}
-          >
-            {COPY[locale === "en" ? "ko" : "en"].languageName}
-          </Button>
+          <div className="flex items-center gap-1">
+            {(messages.length > 0 || trail.nodes.length > 0) && (
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={isBusy}
+                onClick={() =>
+                  confirmingStartOver
+                    ? startOver()
+                    : setConfirmingStartOver(true)
+                }
+                onBlur={() => setConfirmingStartOver(false)}
+                onMouseLeave={() => setConfirmingStartOver(false)}
+              >
+                {confirmingStartOver ? copy.startOverConfirm : copy.startOver}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => setLocale(locale === "en" ? "ko" : "en")}
+            >
+              {COPY[locale === "en" ? "ko" : "en"].languageName}
+            </Button>
+          </div>
         </header>
 
         <ChatLog

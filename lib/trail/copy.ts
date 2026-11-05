@@ -20,6 +20,9 @@ export interface Copy {
   imageUnreadable: string;
   imagesOnly: string;
   regionNote: (concept: string) => string;
+  startOver: string;
+  startOverConfirm: string;
+  saveFailed: string;
 
   mapTitle: string;
   mapEmpty: string;
@@ -88,6 +91,9 @@ export const COPY: Record<Locale, Copy> = {
     imageUnreadable: "이 이미지는 읽지 못했어. 다른 형식으로 다시 던져줘.",
     imagesOnly: "이미지만 던질 수 있어. 코드는 그냥 붙여넣어 줘.",
     regionNote: (concept) => `SAM 3.1이 짚은 부분: ${concept}`,
+    startOver: "새로 시작",
+    startOverConfirm: "이 길을 지울까?",
+    saveFailed: "이 브라우저에 저장하지 못했어. 새로고침하면 이 길은 사라져.",
 
     mapTitle: "내가 밟은 길",
     mapEmpty: "아직 길이 없어. 질문하면 여기에 발자국이 남아.",
@@ -177,6 +183,10 @@ export const COPY: Record<Locale, Copy> = {
     imageUnreadable: "That image couldn't be read. Try another format.",
     imagesOnly: "Only images can be dropped. Paste code as text.",
     regionNote: (concept) => `Picked out by SAM 3.1: ${concept}`,
+    startOver: "New trail",
+    startOverConfirm: "Erase this trail?",
+    saveFailed:
+      "Couldn't save to this browser, so this trail is lost if you reload.",
 
     mapTitle: "Where I've been",
     mapEmpty: "No trail yet. Ask something and your footsteps show up here.",
