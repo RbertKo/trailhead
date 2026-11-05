@@ -166,12 +166,37 @@ lib/
   guard/              Sign-in sessions and the rate limiter
 proxy.ts              Requires sign-in everywhere and rate-limits every /api route
 scripts/smoke.ts      End-to-end check and demo rehearsal against the real API
+Dockerfile            The app's container image
+compose.yaml          The public demo: the app and its own Tailscale node
+deploy/tailscale/     What that Tailscale node makes public
 ```
 
 ## Configuration
 
 See [`.env.example`](.env.example). The API key and the sign-in values are read on the
 server only. Until `AUTH_EMAIL` and `AUTH_PASSWORD` are both set, nobody can get in.
+
+## Deploying
+
+The public demo runs in containers ([`compose.yaml`](compose.yaml)). The app has a
+read-only filesystem, runs without root and drops every capability. It shares the
+network of its own Tailscale node, which makes only the app public through Funnel, so
+the machine underneath stays private.
+
+The tailnet needs HTTPS certificates turned on, and its policy has to grant the node the
+`funnel` attribute.
+
+```bash
+cp .env.example .env.local   # then set MODEL_API_KEY
+
+# Log the node in once. Its normal start gives up after 60 seconds and changes the link.
+docker compose run --rm --no-deps --entrypoint sh tailscale -c 'tailscaled --statedir=/var/lib/tailscale --tun=userspace-networking --socket=/tmp/ts.sock >/dev/null 2>&1 & sleep 3; tailscale --socket=/tmp/ts.sock up --hostname=trailhead-demo'
+
+docker compose up -d --build
+```
+
+The key is passed in when the container starts and never goes into the image. To update
+the app and leave the node alone, run `git pull && docker compose up -d --build web`.
 
 ## Built during the hackathon
 

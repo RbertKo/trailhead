@@ -62,6 +62,14 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 - **모델 답변의 이미지와 링크는 글자로만 보여준다.** 스크린샷 속 글자로 모델을 속이면 대화 내용이 담긴 주소를 불러오게 만들 수 있다(`components/trail/reply-text.tsx`). 프롬프트에 넣는 지도 내용은 `quoted()`와 `plainName()`을 거친다.
 - **새 `/api` 경로는 `proxy.ts`의 호출 제한을 자동으로 적용받는다.** IP별 분당 상한과, 공개 데모의 크레딧을 지키는 하루 전체 상한이 있다. 둘 다 프로세스 메모리에서 세므로 재시작하면 초기화된다. 본문 크기 상한은 `parseJsonBody`로 경로마다 정한다. 요청 본문은 곧 과금되는 입력 토큰이다.
 
+## 배포
+
+- **공개 데모는 컨테이너로 돈다.** `compose.yaml`의 `web`은 읽기 전용 파일시스템, 비루트, capability 없이 돌고, 전용 Tailscale 노드(`tailscale`)와 네트워크를 공유한다. 그 노드가 Funnel로 앱만 공개한다(`deploy/tailscale/funnel.json`).
+- **서버 자체를 Funnel로 공개하지 않는다.** 서버 노드에서 `tailscale funnel`을 켜지 않는다. Tailscale Service(`svc:`)는 tailnet 안에서만 보이고 Funnel을 지원하지 않는다.
+- **API 키는 이미지에 들어가지 않는다.** `.dockerignore`가 `.env*`를 빼고, 서버의 `.env.local`을 컨테이너를 시작할 때 `env_file`로 넘긴다.
+- **갱신은 `git pull && docker compose up -d --build web`이다.** 노드는 그대로 두고 앱만 바꾼다.
+- **`docker compose down -v`를 쓰지 않는다.** 볼륨에 노드의 정체성이 있어 지우면 다시 로그인해야 한다. 첫 로그인은 시작 스크립트가 60초만 기다리고 재시작해 링크가 계속 바뀌므로, entrypoint를 바꿔 `tailscaled`와 `tailscale up`을 직접 실행하면 링크가 고정된다(명령은 README의 Deploying에 있다).
+
 ## 작업 전후 확인
 
 ```bash
