@@ -17,6 +17,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 - **제출 필수 항목:** 공개 GitHub 저장소, 3분 데모 영상. [제출 폼](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit)과 [참가자 가이드](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/details)는 로그인해야 보인다.
 - **심사 배점:** Impact 30, Use of Meta AI Tooling 25, Demo 25, Technical Depth & Execution 20.
 - **문제 영역:** Build for Your World.
+- **언어:** 심사위원이 영어를 쓰므로 화면 기본값은 영어이고, 상단 버튼으로 한국어로 바꾼다. 답변은 사용자가 쓴 언어를 따른다. 새 문구는 `lib/trail/copy.ts`에 두 언어 모두 넣고, `npm run smoke`는 데모 대본을 두 언어로 확인한다.
 - **라이선스:** Sustainable Use License (n8n과 같음, `LICENSE.md`). 저장소는 공개지만 OSI 승인 오픈소스는 아니며 상업적 재판매와 유료 제공을 막는다. 해커톤 규칙의 "Open source: Repositories must be public"은 공개 저장소로 충족한다. 오픈소스라고 표현하지 않는다.
 
 ## 설계 원칙: 기능보다 우선한다
@@ -64,7 +65,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 
 ```bash
 npm run typecheck && npm run lint && npm run test && npm run build
-npm run smoke   # 실제 API 호출과 데모 리허설. 실행당 약 $0.05가 든다.
+npm run smoke   # 실제 API 호출과 데모 리허설. 실행당 약 $0.10이 든다.
 ```
 
 개발 서버는 `localhost`로 접속한다. `127.0.0.1`은 Next 16이 교차 출처로 막아 화면은 보이지만 동작하지 않는다.
