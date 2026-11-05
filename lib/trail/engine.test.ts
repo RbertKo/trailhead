@@ -182,6 +182,31 @@ describe("starting from a broad interest", () => {
     expect(s.trail.pending).toBeNull();
   });
 
+  it("still checks memory when a broad introduction is requested days later", () => {
+    const s = session();
+    s.turn(start(["AI"]), "AI 큰 그림부터 알려줘");
+    s.wait(4 * DAY);
+
+    expect(s.turn(start(["AI"]), "AI 큰 그림 다시 알려줘")).toMatchObject({
+      kind: "recall_ask",
+      nodeId: s.node("AI").id,
+      originalQuestion: "AI 큰 그림 다시 알려줘",
+    });
+    expect(s.trail.pending?.kind).toBe("recall");
+  });
+
+  it("does not add a second memory check when introducing another due topic", () => {
+    const s = session();
+    s.turn(start(["AI", "ML"]), "AI랑 ML 큰 그림부터 알려줘");
+    s.wait(4 * DAY);
+    expect(s.turn(start(["AI"]), "AI 다시 알려줘").kind).toBe("recall_ask");
+    s.turn(analysis({ moment: "other", recallVerdict: "solid" }), "기억한 설명");
+
+    expect(s.turn(start(["ML"]), "이번에는 ML 알려줘").kind).toBe("start");
+    expect(s.node("ML").state).toBe("seen");
+    expect(s.trail.pending).toBeNull();
+  });
+
   it("keeps the latest interest when its introduction is stopped", () => {
     const s = session();
     s.turn(wish, "AI 공부하고 싶어");

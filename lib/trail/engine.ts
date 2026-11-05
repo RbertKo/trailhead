@@ -574,6 +574,11 @@ export function applyTurn(
   }
 
   if (startsLearning) {
+    // Broad wording must not erase an existing concept's due memory check.
+    if (focus) {
+      const recall = pickRecall(relatedConcepts(focus, draft.nodes), before, now);
+      if (recall) return askRecall(recall, focus.id);
+    }
     const topics =
       topicLabels.length > 0 ? topicLabels : opening?.topicLabels ?? [];
     return finish(
