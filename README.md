@@ -90,13 +90,14 @@ Requires Node.js 22.9 or later.
 
 ```bash
 npm install
-cp .env.example .env.local   # then set MODEL_API_KEY
+cp .env.example .env.local   # then set MODEL_API_KEY, AUTH_EMAIL and AUTH_PASSWORD
 npm run smoke                # checks the real API and rehearses the demo
 npm run dev
 ```
 
-Open <http://localhost:3000>. Use `localhost`: the dev server doesn't serve its scripts
-to `127.0.0.1`, and the page then looks fine but does nothing.
+Open <http://localhost:3000> and sign in with `AUTH_EMAIL` and `AUTH_PASSWORD`. Use
+`localhost`: the dev server doesn't serve its scripts to `127.0.0.1`, and the page then
+looks fine but does nothing.
 
 `npm run smoke` calls the real API and costs about $0.10 per run.
 
@@ -121,12 +122,14 @@ language you write in, so the whole flow works in either.
 
 ## Scope
 
-There are no accounts. Your trail, conversation and images are saved in this browser's
-IndexedDB, so they're still there when you come back days later, which is when memory
-checks really come due. **New trail** erases them. Nothing about a learner is stored on
-the server, so a trail doesn't follow you to another browser or device, and clearing site
-data erases it. Dropped images are sent to the Meta Model API with the turn they were
-dropped in, and later turns carry only the text description.
+There are no learner accounts: one email and password, set on the server, keep
+strangers from spending the API credits. Your trail, conversation and images are
+saved in this browser's IndexedDB, so they're still there when you come back days
+later, which is when memory checks really come due. **New trail** erases them.
+Nothing about a learner is stored on the server, so a trail doesn't follow you to
+another browser or device, and clearing site data erases it. Dropped images are
+sent to the Meta Model API with the turn they were dropped in, and later turns
+carry only the text description.
 
 ## Scripts
 
@@ -144,10 +147,12 @@ dropped in, and later turns carry only the text description.
 ```text
 app/
   page.tsx            The app: conversation on the left, trail on the right
+  login/              The sign-in page
   api/turn/           One learner turn: read, decide, reply
   api/region/         SAM 3.1: the key region of a dropped image
+  api/login/          Checks the email and password and starts a session
 components/
-  trail/              The conversation, the map and its details
+  trail/              The conversation, the map, its details and the sign-in form
   ui/                 shadcn/ui components
 lib/
   trail/
@@ -164,14 +169,15 @@ lib/
     copy.ts           English and Korean interface text
   meta/               Meta Model API configuration, clients and SAM parsing
   api/                Request parsing and error mapping
-  guard/              Rate limiter
-proxy.ts              Applies the rate limit to every /api route
+  guard/              Sign-in sessions and the rate limiter
+proxy.ts              Requires sign-in everywhere and rate-limits every /api route
 scripts/smoke.ts      End-to-end check and demo rehearsal against the real API
 ```
 
 ## Configuration
 
-See [`.env.example`](.env.example). The API key is read on the server only.
+See [`.env.example`](.env.example). The API key and the sign-in values are read on the
+server only. Until `AUTH_EMAIL` and `AUTH_PASSWORD` are both set, nobody can get in.
 
 ## Built during the hackathon
 
