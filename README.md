@@ -25,10 +25,12 @@ measure anything about ADHD or attention.
 
 ## What it does
 
-- **No curriculum up front.** Say "I want to learn AI" and it asks what you're most
-  curious about. Structure is the result of your questions, not the input to them. Once
-  you've asked a few things, or when you ask what's next, it offers a short path built
-  from them, as buttons you can ignore.
+- **No curriculum up front.** Say "I want to learn AI" and it asks what brought you
+  to it, once. A broad interest is enough: ask for the big picture or say
+  "I don't know" and it starts explaining that interest with a concrete example,
+  without another preference question. Structure is the result of your questions,
+  not the input to them. Once you've asked a few things, or when you ask what's next,
+  it offers a short path built from them, as buttons you can ignore.
 - **Throw anything at it.** Drop or paste a screenshot, photo or diagram. Muse Spark
   works out what it is and places it on the map. It never asks where to file it.
 - **The trail draws itself.** Every question and every image grows the map. Wandering
@@ -100,7 +102,9 @@ to `127.0.0.1`, and the page then looks fine but does nothing.
 
 ## Try the demo flow
 
-1. Say `I want to learn AI`. No curriculum, just "what are you most curious about?".
+1. Say `I want to learn AI`. It asks one optional question about your interest.
+   Say `I don't know` or `I want to understand ML, DL and LLMs as a whole` and it
+   starts explaining. A direct request such as `Teach me AI` starts immediately.
 2. Ask a question or two, and drop a screenshot. The trail grows on the right, and after
    a few questions a short suggested path appears under the reply.
 3. Ask `Explain backpropagation`. A hole appears for what it rests on, such as the chain

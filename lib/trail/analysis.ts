@@ -32,7 +32,14 @@ export type ConceptAnalysis = z.infer<typeof conceptSchema>;
 
 export const turnAnalysisSchema = z.object({
   moment: z
-    .enum(["broad_wish", "question", "coming_back", "wrapping_up", "other"])
+    .enum([
+      "broad_wish",
+      "start_learning",
+      "question",
+      "coming_back",
+      "wrapping_up",
+      "other",
+    ])
     .describe("What the learner is doing in this message."),
   focusLabel: z
     .string()
