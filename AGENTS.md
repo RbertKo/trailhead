@@ -67,7 +67,7 @@ Meta Global AI Developer Hackathon 제출 프로젝트 **Trailhead**다. ADHD �
 - **서버 자체를 Funnel로 공개하지 않는다.** 서버 노드에서 `tailscale funnel`을 켜지 않는다. Tailscale Service(`svc:`)는 tailnet 안에서만 보이고 Funnel을 지원하지 않는다.
 - **API 키는 이미지에 들어가지 않는다.** `.dockerignore`가 `.env*`를 빼고, 서버의 `.env.local`을 컨테이너를 시작할 때 `env_file`로 넘긴다.
 - **갱신은 `git pull && docker compose up -d --build web`이다.** 노드는 그대로 두고 앱만 바꾼다.
-- **`docker compose down -v`를 쓰지 않는다.** 볼륨에 노드의 정체성이 있어 지우면 다시 로그인해야 한다. 첫 로그인은 시작 스크립트가 60초만 기다리고 재시작해 링크가 계속 바뀌므로, entrypoint를 바꿔 `tailscaled`와 `tailscale up`을 직접 실행하면 링크가 고정된다.
+- **`docker compose down -v`를 쓰지 않는다.** 볼륨에 노드의 정체성이 있어 지우면 다시 로그인해야 한다. 첫 로그인은 시작 스크립트가 60초만 기다리고 재시작해 링크가 계속 바뀌므로, entrypoint를 바꿔 `tailscaled`와 `tailscale up`을 직접 실행하면 링크가 고정된다(명령은 README의 Deploying에 있다).
 
 ## 작업 전후 확인
 

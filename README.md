@@ -178,10 +178,16 @@ read-only filesystem, runs without root and drops every capability. It shares th
 network of its own Tailscale node, which makes only the app public through Funnel, so
 the machine underneath stays private.
 
+The tailnet needs HTTPS certificates turned on, and its policy has to grant the node the
+`funnel` attribute.
+
 ```bash
-cp .env.example .env.local      # then set MODEL_API_KEY
+cp .env.example .env.local   # then set MODEL_API_KEY
+
+# Log the node in once. Its normal start gives up after 60 seconds and changes the link.
+docker compose run --rm --no-deps --entrypoint sh tailscale -c 'tailscaled --statedir=/var/lib/tailscale --tun=userspace-networking --socket=/tmp/ts.sock >/dev/null 2>&1 & sleep 3; tailscale --socket=/tmp/ts.sock up --hostname=trailhead-demo'
+
 docker compose up -d --build
-docker compose logs tailscale   # the first start prints a login link
 ```
 
 The key is passed in when the container starts and never goes into the image. To update
