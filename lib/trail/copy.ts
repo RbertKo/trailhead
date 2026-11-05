@@ -1,6 +1,8 @@
 import type { Locale } from "./request";
 import type { NodeState, Trace } from "./types";
 
+export type SignInProblem = "invalid" | "tooMany" | "notConfigured" | "failed";
+
 export interface Copy {
   languageName: string;
   tagline: string;
@@ -55,6 +57,12 @@ export interface Copy {
   reviewReply: string;
   nextStepsTitle: string;
   askAbout: (label: string) => string;
+
+  emailLabel: string;
+  passwordLabel: string;
+  signIn: string;
+  signingIn: string;
+  signInProblems: Record<SignInProblem, string>;
 }
 
 const MINUTE = 60_000;
@@ -139,6 +147,17 @@ export const COPY: Record<Locale, Copy> = {
     reviewReply: "복습할래",
     nextStepsTitle: "이어서 볼 만한 길",
     askAbout: (label) => `${label} 알려줘`,
+
+    emailLabel: "이메일",
+    passwordLabel: "암호",
+    signIn: "로그인",
+    signingIn: "로그인하는 중…",
+    signInProblems: {
+      invalid: "이메일이나 암호가 맞지 않아.",
+      tooMany: "시도가 너무 많아. 잠시 뒤에 다시 해봐.",
+      notConfigured: "이 서버에는 아직 로그인이 설정되지 않았어.",
+      failed: "로그인하지 못했어. 다시 해봐.",
+    },
   },
   en: {
     languageName: "English",
@@ -217,5 +236,16 @@ export const COPY: Record<Locale, Copy> = {
     reviewReply: "Review it",
     nextStepsTitle: "Where this could go next",
     askAbout: (label) => `Tell me about ${label}`,
+
+    emailLabel: "Email",
+    passwordLabel: "Password",
+    signIn: "Sign in",
+    signingIn: "Signing in…",
+    signInProblems: {
+      invalid: "That email and password don't match.",
+      tooMany: "Too many attempts. Try again in a minute.",
+      notConfigured: "Sign-in isn't set up on this server yet.",
+      failed: "Couldn't sign in. Try again.",
+    },
   },
 };
