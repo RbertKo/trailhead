@@ -1,0 +1,64 @@
+# The public demo. Only the app is public: a dedicated Tailscale node serves it
+# through Funnel, so the machine it runs on stays private.
+name: trailhead
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.102.2
+    container_name: trailhead-tailscale
+    hostname: trailhead-demo
+    restart: unless-stopped
+    environment:
+      TS_HOSTNAME: trailhead-demo
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /config/funnel.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./deploy/tailscale:/config:ro
+    ports:
+      # For checks on the machine itself. Never published beyond loopback.
+      - "127.0.0.1:4327:3000"
+    healthcheck:
+      test: ["CMD", "tailscale", "status", "--json"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build: .
+    image: trailhead:${APP_IMAGE_TAG:-latest}
+    container_name: trailhead-web
+    restart: unless-stopped
+    # Shares the node's network, so Funnel reaches the app on 127.0.0.1:3000.
+    network_mode: service:tailscale
+    env_file:
+      - .env.local
+    depends_on:
+      tailscale:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  tailscale-state:
+    # Holds the node's identity. Losing it means logging the node in again.
+    name: trailhead-tailscale_tailscale-state
